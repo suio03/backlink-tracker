@@ -11,8 +11,8 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
-RUN npm ci --only=production --ignore-scripts
+# Install dependencies (include dev dependencies for build)
+RUN npm ci --ignore-scripts
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -54,9 +54,9 @@ ENV PORT 3000
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Health check
+# Health check using API endpoint
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node healthcheck.js || exit 1
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # Start the application
 CMD ["node", "server.js"] 

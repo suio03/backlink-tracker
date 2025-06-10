@@ -19,11 +19,8 @@ const nextConfig = {
     ],
   },
   
-  // Experimental features
-  experimental: {
-    // Enable server components
-    serverComponentsExternalPackages: ['pg', 'postgres'],
-  },
+  // External packages for server components (moved from experimental in Next.js 15)
+  serverExternalPackages: ['pg', 'postgres'],
   
   // Environment variables validation
   env: {

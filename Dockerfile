@@ -26,7 +26,8 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
-# Build the application
+# Clean any existing build artifacts and build
+RUN rm -rf .next
 RUN npm run build
 
 # Stage 3: Runner (Production)

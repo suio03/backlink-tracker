@@ -4,107 +4,7 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/navigation";
 import { ResourceTable } from "@/components/resource-table";
-import { WebsiteWithStats, BacklinkWithDetails, Resource } from "@/types";
-
-// Mock data - will be replaced with real API calls
-const mockWebsite: WebsiteWithStats = {
-  id: 1,
-  domain: "aianalyticstools.com",
-  name: "AI Analytics Tools",
-  category: "ai-analytics",
-  created_at: "2024-01-01T00:00:00Z",
-  updated_at: "2024-01-15T00:00:00Z",
-  is_active: true,
-  totalOpportunities: 50,
-  liveBacklinks: 12,
-  pendingBacklinks: 25,
-  requestedBacklinks: 8,
-  rejectedBacklinks: 5,
-  completionRate: 24,
-  lastActivity: "2024-01-15T00:00:00Z",
-};
-
-const mockResources: Resource[] = [
-  {
-    id: 1,
-    domain: "futuretools.io",
-    url: "https://futuretools.io",
-    domain_authority: 85,
-    category: "ai-directory",
-    cost: 0,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
-    is_active: true,
-  },
-  {
-    id: 2,
-    domain: "aitoolnet.com", 
-    url: "https://aitoolnet.com",
-    domain_authority: 75,
-    category: "ai-directory",
-    cost: 0,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
-    is_active: true,
-  },
-  {
-    id: 3,
-    domain: "toolscout.ai",
-    url: "https://toolscout.ai", 
-    domain_authority: 68,
-    category: "ai-directory",
-    cost: 0,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
-    is_active: true,
-  },
-  {
-    id: 4,
-    domain: "launched.io",
-    url: "https://launched.io",
-    domain_authority: 73,
-    category: "startup-directory", 
-    cost: 50,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
-    is_active: true,
-  },
-  {
-    id: 5,
-    domain: "startupstash.com",
-    url: "https://startupstash.com",
-    domain_authority: 76,
-    category: "startup-directory",
-    cost: 75,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-01T00:00:00Z",
-    is_active: true,
-  },
-];
-
-// Generate mock backlinks for the selected website
-const generateMockBacklinks = (websiteId: number): BacklinkWithDetails[] => {
-  return mockResources.map((resource, index) => ({
-    id: index + 1,
-    website_id: websiteId,
-    resource_id: resource.id,
-    status: index === 0 ? "live" : 
-           index === 1 ? "live" :
-           index === 2 ? "requested" :
-           index === 3 ? "placed" : "pending",
-    anchor_text: index === 0 ? "AI Analytics Dashboard" :
-                index === 1 ? "Advanced Analytics with AI" :
-                index === 2 ? "Data Analytics AI Tools" : undefined,
-    target_url: index === 0 ? "https://aianalyticstools.com/dashboard" :
-               index === 1 ? "https://aianalyticstools.com/advanced" :
-               index === 2 ? "https://aianalyticstools.com/tools" : undefined,
-    placement_date: index < 2 ? "2024-01-15" : undefined,
-    created_at: "2024-01-01T00:00:00Z",
-    updated_at: "2024-01-15T00:00:00Z",
-    website: mockWebsite,
-    resource: resource,
-  }));
-};
+import { Website, BacklinkWithDetails } from "@/types";
 
 interface PageProps {
   params: Promise<{
@@ -115,50 +15,126 @@ interface PageProps {
 export default function WebsiteResourcesPage({ params }: PageProps) {
   const router = useRouter();
   const resolvedParams = use(params);
-  const [website, setWebsite] = useState<WebsiteWithStats | null>(null);
+  const [website, setWebsite] = useState<Website | null>(null);
   const [backlinks, setBacklinks] = useState<BacklinkWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API call to fetch website and backlinks
     const fetchData = async () => {
-      setIsLoading(true);
-      
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // In real app, fetch based on resolvedParams.id
-      const websiteData = mockWebsite;
-      const backlinksData = generateMockBacklinks(Number(resolvedParams.id));
-      
-      setWebsite(websiteData);
-      setBacklinks(backlinksData);
-      setIsLoading(false);
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        const websiteId = parseInt(resolvedParams.id);
+        if (isNaN(websiteId)) {
+          setError('Invalid website ID');
+          return;
+        }
+
+        // Fetch website details and backlinks in parallel
+        const [websiteResponse, backlinksResponse] = await Promise.all([
+          fetch(`/api/websites/${websiteId}`),
+          fetch(`/api/websites/${websiteId}/backlinks`)
+        ]);
+
+        const websiteResult = await websiteResponse.json();
+        const backlinksResult = await backlinksResponse.json();
+
+        if (!websiteResult.success) {
+          setError(websiteResult.message || 'Failed to fetch website');
+          return;
+        }
+
+        if (!backlinksResult.success) {
+          setError(backlinksResult.message || 'Failed to fetch backlinks');
+          return;
+        }
+
+        setWebsite(websiteResult.data);
+        setBacklinks(backlinksResult.data);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError('Failed to connect to the server');
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchData();
   }, [resolvedParams.id]);
 
-  const handleBacklinkUpdate = (id: number, updates: Partial<BacklinkWithDetails>) => {
-    setBacklinks(prev => prev.map(backlink => 
-      backlink.id === id 
-        ? { ...backlink, ...updates }
-        : backlink
-    ));
-    
-    // TODO: Call API to update backlink
-    console.log("Updating backlink:", id, updates);
+  const handleBacklinkUpdate = async (id: number, updates: Partial<BacklinkWithDetails>) => {
+    try {
+      // Optimistically update UI
+      setBacklinks(prev => prev.map(backlink => 
+        backlink.id === id 
+          ? { ...backlink, ...updates }
+          : backlink
+      ));
+
+      // Call API to update backlink
+      const response = await fetch(`/api/backlinks/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        // Revert on failure
+        setBacklinks(prev => prev.map(backlink => 
+          backlink.id === id 
+            ? { ...backlink, ...updates }
+            : backlink
+        ));
+        console.error('Failed to update backlink:', result.message);
+      }
+    } catch (error) {
+      console.error('Error updating backlink:', error);
+      // Revert on error
+      setBacklinks(prev => prev.map(backlink => 
+        backlink.id === id 
+          ? { ...backlink, ...updates }
+          : backlink
+      ));
+    }
   };
 
-  const handleBulkUpdate = (ids: number[], updates: Partial<BacklinkWithDetails>) => {
-    setBacklinks(prev => prev.map(backlink => 
-      ids.includes(backlink.id)
-        ? { ...backlink, ...updates }
-        : backlink
-    ));
-    
-    // TODO: Call API for bulk update
-    console.log("Bulk updating backlinks:", ids, updates);
+  const handleBulkUpdate = async (ids: number[], updates: Partial<BacklinkWithDetails>) => {
+    try {
+      // Optimistically update UI
+      setBacklinks(prev => prev.map(backlink => 
+        ids.includes(backlink.id)
+          ? { ...backlink, ...updates }
+          : backlink
+      ));
+
+      // Call API for each backlink (could be optimized with bulk endpoint)
+      const promises = ids.map(id => 
+        fetch(`/api/backlinks/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updates),
+        })
+      );
+
+      const responses = await Promise.all(promises);
+      const results = await Promise.all(responses.map(r => r.json()));
+
+      const failedUpdates = results.filter(r => !r.success);
+      if (failedUpdates.length > 0) {
+        console.error('Some bulk updates failed:', failedUpdates);
+      }
+    } catch (error) {
+      console.error('Error in bulk update:', error);
+      // Could revert changes here if needed
+    }
   };
 
   const handleBack = () => {
@@ -170,12 +146,40 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
       <div className="min-h-screen bg-gray-50">
         <Navigation />
         <div className="container mx-auto px-4 py-8">
-          <ResourceTable 
-            backlinks={[]}
-            onBacklinkUpdate={handleBacklinkUpdate}
-            onBulkUpdate={handleBulkUpdate}
-            isLoading={true}
-          />
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading backlink opportunities...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="text-red-600 text-lg font-semibold mb-2">Error</div>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <button 
+                onClick={handleBack}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 mr-2"
+              >
+                ← Back to Websites
+              </button>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -206,12 +210,7 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navigation 
-        selectedWebsite={website}
-        onBack={handleBack}
-        showStats={true}
-      />
-      
+      <Navigation />
       <div className="container mx-auto px-4 py-8">
         <ResourceTable 
           backlinks={backlinks}

@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Globe, BarChart3 } from "lucide-react";
+import { ArrowLeft, Globe, BarChart3, Settings } from "lucide-react";
 import { WebsiteWithStats } from "@/types";
+import Link from "next/link";
 
 interface NavigationProps {
   selectedWebsite?: WebsiteWithStats;
@@ -12,13 +13,31 @@ interface NavigationProps {
 
 export function Navigation({ selectedWebsite, onBack, showStats = true }: NavigationProps) {
   if (!selectedWebsite) {
-    // Homepage navigation - just the logo/title
+    // Homepage navigation - just the logo/title with management links
     return (
       <nav className="border-b border-gray-200 bg-white">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center">
-            <Globe className="h-6 w-6 text-blue-600 mr-3" />
-            <h1 className="text-xl font-bold text-gray-900">Backlink Tracker</h1>
+          <div className="flex items-center justify-between">
+            <Link href="/" className="flex items-center">
+              <Globe className="h-6 w-6 text-blue-600 mr-3" />
+              <h1 className="text-xl font-bold text-gray-900">Backlink Tracker</h1>
+            </Link>
+            <div className="flex items-center space-x-4">
+              <Link
+                href="/websites"
+                className="flex items-center text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+              >
+                <Globe className="h-4 w-4 mr-2" />
+                Manage Websites
+              </Link>
+              <Link
+                href="/resources"
+                className="flex items-center text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Manage Resources
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
@@ -117,10 +136,10 @@ export function Navigation({ selectedWebsite, onBack, showStats = true }: Naviga
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="flex items-center space-x-2">
                 <div className="h-2 w-2 bg-blue-500 rounded-full" />
-                <span className="text-sm text-blue-700">Requested</span>
+                <span className="text-sm text-blue-700">Placed</span>
               </div>
               <div className="text-xl font-bold text-blue-900 mt-1">
-                {selectedWebsite.requestedBacklinks}
+                {selectedWebsite.placedBacklinks}
               </div>
               <div className="text-xs text-blue-600">in progress</div>
             </div>

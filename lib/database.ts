@@ -19,13 +19,30 @@ export function getDatabase(): Pool {
       throw new Error('DATABASE_URL environment variable is not set');
     }
 
-    pool = new Pool({
-      connectionString: databaseUrl,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Parse connection string or use individual components
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const config: Record<string, any> = {
       max: 20, // Maximum number of connections
       idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
       connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection could not be established
-    });
+    };
+
+    if (databaseUrl.startsWith('postgresql://') || databaseUrl.startsWith('postgres://')) {
+      // Use connection string
+      config.connectionString = databaseUrl;
+      // Explicitly disable SSL for local development
+      config.ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
+    } else {
+      // Fallback to individual connection parameters
+      config.host = process.env.DB_HOST || 'localhost';
+      config.port = parseInt(process.env.DB_PORT || '5432');
+      config.database = process.env.DB_NAME || 'backlink_tracker';
+      config.user = process.env.DB_USER || 'backlink_user';
+      config.password = process.env.DB_PASSWORD || 'change_this_password';
+      config.ssl = false; // Disable SSL for local development
+    }
+
+    pool = new Pool(config);
 
     // Handle pool errors
     pool.on('error', (err: Error) => {

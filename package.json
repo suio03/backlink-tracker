@@ -6,9 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "docker:dev": "./docker-dev.sh start",
+    "docker:dev:stop": "./docker-dev.sh stop",
+    "docker:dev:logs": "./docker-dev.sh logs",
+    "docker:dev:restart": "./docker-dev.sh restart",
+    "docker:dev:status": "./docker-dev.sh status",
+    "docker:dev:shell": "./docker-dev.sh shell",
+    "docker:prod": "docker compose up --build -d",
+    "docker:prod:stop": "docker compose down"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-dropdown-menu": "^2.1.15",
     "@radix-ui/react-progress": "^1.1.7",

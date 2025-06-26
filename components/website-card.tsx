@@ -70,9 +70,9 @@ export function WebsiteCard({ website, onClick, className }: WebsiteCardProps) {
             </p>
           </div>
           <div className="space-y-1">
-            <p className="text-gray-600">Requested</p>
+            <p className="text-gray-600">Placed</p>
             <p className="text-lg font-semibold text-blue-600">
-              {website.requestedBacklinks}
+              {website.placedBacklinks}
             </p>
           </div>
         </div>

@@ -36,7 +36,7 @@ export async function PATCH(
     } = body;
     
     // Validate status if provided
-    if (status && !['pending', 'requested', 'placed', 'live', 'removed', 'rejected'].includes(status)) {
+    if (status && !['pending', 'placed', 'live', 'removed', 'rejected'].includes(status)) {
       return NextResponse.json(
         {
           success: false,

@@ -207,9 +207,9 @@ export function ResourceTable({
             <Button 
               size="sm" 
               variant="outline"
-              onClick={() => handleBulkStatusUpdate('requested')}
+              onClick={() => handleBulkStatusUpdate('placed')}
             >
-              Mark as Requested
+              Mark as Placed
             </Button>
             <Button 
               size="sm" 
@@ -276,7 +276,7 @@ export function ResourceTable({
                   
                   <TableCell>
                     <div className="space-y-1">
-                      <div className="font-medium">{backlink.resource.domain}</div>
+                      <div className="font-medium"><a href={backlink.resource.url} target="_blank" rel="noopener noreferrer">{backlink.resource.domain}</a></div>
                       <div className="text-sm text-gray-500">{backlink.resource.category}</div>
                     </div>
                   </TableCell>
@@ -292,7 +292,6 @@ export function ResourceTable({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="requested">Requested</SelectItem>
                           <SelectItem value="placed">Placed</SelectItem>
                           <SelectItem value="live">Live</SelectItem>
                           <SelectItem value="rejected">Rejected</SelectItem>

@@ -18,7 +18,7 @@ interface WebsiteStatsRow {
   total_opportunities: string;
   live_backlinks: string;
   pending_backlinks: string;
-  requested_backlinks: string;
+  placed_backlinks: string;
   rejected_backlinks: string;
   completion_rate: string;
   last_activity: string;
@@ -36,7 +36,7 @@ export async function getWebsitesWithStats(): Promise<WebsiteWithStats[]> {
       COUNT(b.id) as total_opportunities,
       COUNT(CASE WHEN b.status = 'live' THEN 1 END) as live_backlinks,
       COUNT(CASE WHEN b.status = 'pending' THEN 1 END) as pending_backlinks,
-      COUNT(CASE WHEN b.status = 'requested' THEN 1 END) as requested_backlinks,
+              COUNT(CASE WHEN b.status = 'placed' THEN 1 END) as placed_backlinks,
       COUNT(CASE WHEN b.status = 'rejected' THEN 1 END) as rejected_backlinks,
       CASE 
         WHEN COUNT(b.id) > 0 
@@ -64,7 +64,7 @@ export async function getWebsitesWithStats(): Promise<WebsiteWithStats[]> {
     totalOpportunities: parseInt(row.total_opportunities) || 0,
     liveBacklinks: parseInt(row.live_backlinks) || 0,
     pendingBacklinks: parseInt(row.pending_backlinks) || 0,
-    requestedBacklinks: parseInt(row.requested_backlinks) || 0,
+          placedBacklinks: parseInt(row.placed_backlinks) || 0,
     rejectedBacklinks: parseInt(row.rejected_backlinks) || 0,
     completionRate: parseFloat(row.completion_rate) || 0,
     lastActivity: row.last_activity
@@ -112,8 +112,7 @@ export async function getBacklinksByWebsiteId(websiteId: number): Promise<Backli
       CASE b.status 
         WHEN 'live' THEN 1
         WHEN 'placed' THEN 2
-        WHEN 'requested' THEN 3
-        WHEN 'pending' THEN 4
+        WHEN 'pending' THEN 3
         WHEN 'rejected' THEN 5
         WHEN 'removed' THEN 6
         ELSE 7

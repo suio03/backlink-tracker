@@ -1,10 +1,10 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (same as production)
   postgres:
     image: postgres:15-alpine
-    container_name: backlink-postgres
+    container_name: backlink-postgres-dev
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-backlink_tracker}
@@ -12,13 +12,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql/data
       - ./database/schema-postgresql.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./database/seed-postgresql.sql:/docker-entrypoint-initdb.d/02-seed.sql
     ports:
       - "5432:5432"
     networks:
-      - backlink-network
+      - backlink-network-dev
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-backlink_user} -d ${POSTGRES_DB:-backlink_tracker}"]
       interval: 10s
@@ -26,21 +26,25 @@ services:
       retries: 5
       start_period: 30s
 
-  # Next.js Application
+  # Next.js Application (Development with hot reload)
   app:
     build: 
       context: .
-      dockerfile: Dockerfile
-    container_name: backlink-app
+      dockerfile: Dockerfile.dev
+    container_name: backlink-app-dev
     restart: unless-stopped
     environment:
       # Database connection
       DATABASE_URL: postgresql://${POSTGRES_USER:-backlink_user}:${POSTGRES_PASSWORD:-change_this_password}@postgres:5432/${POSTGRES_DB:-backlink_tracker}?sslmode=disable
       
-      # App configuration
-      NODE_ENV: production
+      # App configuration for development
+      NODE_ENV: development
       PORT: 3000
       NEXT_TELEMETRY_DISABLED: 1
+      
+      # Enable hot reload
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
       
       # Security
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-generate_a_secure_secret_here}
@@ -51,7 +55,14 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - backlink-network
+      - backlink-network-dev
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Exclude node_modules to prevent overwriting container's modules
+      - /app/node_modules
+      # Exclude .next build directory to prevent conflicts
+      - /app/.next
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
       interval: 30s
@@ -61,10 +72,10 @@ services:
 
 # Named volumes for data persistence
 volumes:
-  postgres_data:
+  postgres_data_dev:
     driver: local
 
 # Network for service communication
 networks:
-  backlink-network:
+  backlink-network-dev:
     driver: bridge 

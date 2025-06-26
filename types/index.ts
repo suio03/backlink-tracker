@@ -49,7 +49,6 @@ export interface Backlink {
 
 export type BacklinkStatus = 
   | 'pending' 
-  | 'requested' 
   | 'placed' 
   | 'live' 
   | 'removed' 
@@ -60,7 +59,7 @@ export interface WebsiteWithStats extends Website {
   totalOpportunities: number;
   liveBacklinks: number;
   pendingBacklinks: number;
-  requestedBacklinks: number;
+  placedBacklinks: number;
   rejectedBacklinks: number;
   completionRate: number;
   lastActivity?: string;

@@ -1,0 +1,36 @@
+# =====================================
+# Development Dockerfile for Next.js App
+# Optimized for hot reload and development
+# =====================================
+
+FROM node:20-alpine
+
+# Add curl for health checks
+RUN apk add --no-cache curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first for better Docker layer caching
+COPY package.json package-lock.json* ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm ci
+
+# Copy the rest of the application code
+# Note: In development, this will be overridden by volume mount
+COPY . .
+
+# Expose the port
+EXPOSE 3000
+
+# Set environment variables for development
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Start the development server with hot reload
+CMD ["npm", "run", "dev"] 

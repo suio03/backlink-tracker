@@ -56,7 +56,7 @@ export function WebsiteGrid({ websites, onWebsiteSelect, isLoading = false }: We
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">My Websites</h1>
+          <h1 className="text-3xl font-bold text-gray-900">🔥 My Websites - Hot Reload Active!</h1>
           <p className="text-gray-600 mt-1">
             Manage backlinks across {websites.length} websites
           </p>

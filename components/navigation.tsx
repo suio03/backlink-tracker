@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, Globe, BarChart3, Settings } from "lucide-react";
+import { ArrowLeft, Globe, BarChart3, Settings, Tags } from "lucide-react";
 import { WebsiteWithStats } from "@/types";
 import Link from "next/link";
 
@@ -36,6 +36,13 @@ export function Navigation({ selectedWebsite, onBack, showStats = true }: Naviga
               >
                 <Settings className="h-4 w-4 mr-2" />
                 Manage Resources
+              </Link>
+              <Link
+                href="/categories"
+                className="flex items-center text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+              >
+                <Tags className="h-4 w-4 mr-2" />
+                Manage Categories
               </Link>
             </div>
           </div>

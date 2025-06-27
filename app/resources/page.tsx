@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { Navigation } from "@/components/navigation";
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 
 interface Resource {
   id: number;
@@ -211,14 +213,25 @@ export default function ResourcesPage() {
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       <div className="container mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Resources Management</h1>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-          >
-            Add Resource
-          </button>
+        <div className="mb-6">
+          <div className="flex items-center mb-4">
+            <Link
+              href="/"
+              className="flex items-center text-gray-600 hover:text-gray-900 mr-4"
+            >
+              <ArrowLeftIcon className="h-5 w-5 mr-2" />
+              Back to Dashboard
+            </Link>
+          </div>
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">Resources Management</h1>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            >
+              Add Resource
+            </button>
+          </div>
         </div>
 
         {error && (

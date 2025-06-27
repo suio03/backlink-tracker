@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, MagnifyingGlassIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 
 interface Website {
   id: number;
@@ -20,18 +21,18 @@ interface WebsiteFormData {
   category: string;
 }
 
-const CATEGORIES = [
-  'music',
-  'photo',
-  'text-to-speech',
-  'image-editing',
-  'productivity',
-  'saas',
-  'other'
-];
+// Categories will be fetched dynamically from API
+interface WebsiteCategory {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+  is_active: boolean;
+}
 
 export default function WebsitesPage() {
   const [websites, setWebsites] = useState<Website[]>([]);
+  const [categories, setCategories] = useState<WebsiteCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,17 +52,26 @@ export default function WebsitesPage() {
 
   const fetchWebsites = async () => {
     try {
-      const response = await fetch('/api/websites');
-      const data = await response.json();
+      const [websitesResponse, categoriesResponse] = await Promise.all([
+        fetch('/api/websites'),
+        fetch('/api/website-categories')
+      ]);
       
-      if (data.success) {
-        setWebsites(data.data);
+      const websitesData = await websitesResponse.json();
+      const categoriesData = await categoriesResponse.json();
+      
+      if (websitesData.success) {
+        setWebsites(websitesData.data);
       } else {
-        setError(data.message);
+        setError(websitesData.message);
+      }
+      
+      if (categoriesData.success) {
+        setCategories(categoriesData.data);
       }
     } catch (err) {
-      setError('Failed to fetch websites');
-      console.error('Error fetching websites:', err);
+      setError('Failed to fetch data');
+      console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
     }
@@ -179,6 +189,15 @@ export default function WebsitesPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
+          <div className="flex items-center mb-4">
+            <Link
+              href="/"
+              className="flex items-center text-gray-600 hover:text-gray-900 mr-4"
+            >
+              <ArrowLeftIcon className="h-5 w-5 mr-2" />
+              Back to Dashboard
+            </Link>
+          </div>
           <h1 className="text-3xl font-bold text-gray-900">Manage Websites</h1>
           <p className="mt-2 text-gray-600">
             Manage your websites and track their backlink opportunities
@@ -295,9 +314,9 @@ export default function WebsitesPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="">Select Category</option>
-                    {CATEGORIES.map(category => (
-                      <option key={category} value={category}>
-                        {category.charAt(0).toUpperCase() + category.slice(1)}
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.name}>
+                        {category.name.charAt(0).toUpperCase() + category.name.slice(1)}
                       </option>
                     ))}
                   </select>

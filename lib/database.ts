@@ -1,6 +1,6 @@
 /**
  * PostgreSQL Database Connection Utility
- * Replaces Cloudflare D1 for self-hosted deployment
+ * Optimized for Supabase PostgreSQL
  */
 
 import { Pool, PoolClient, QueryResult } from 'pg';
@@ -19,27 +19,34 @@ export function getDatabase(): Pool {
       throw new Error('DATABASE_URL environment variable is not set');
     }
 
-    // Parse connection string or use individual components
+    // Configuration optimized for Supabase
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const config: Record<string, any> = {
-      max: 20, // Maximum number of connections
+      max: 10, // Reduced for Supabase free tier
       idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-      connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection could not be established
+      connectionTimeoutMillis: 10000, // Increased timeout for cloud database
+      statement_timeout: 60000, // 60 second statement timeout
+      query_timeout: 60000, // 60 second query timeout
     };
 
     if (databaseUrl.startsWith('postgresql://') || databaseUrl.startsWith('postgres://')) {
       // Use connection string
       config.connectionString = databaseUrl;
-      // Explicitly disable SSL for local development
-      config.ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
+      
+      // SSL configuration for Supabase
+      if (process.env.NODE_ENV === 'production' || databaseUrl.includes('supabase.co')) {
+        config.ssl = { rejectUnauthorized: false };
+      } else {
+        config.ssl = false; // Local development
+      }
     } else {
       // Fallback to individual connection parameters
       config.host = process.env.DB_HOST || 'localhost';
       config.port = parseInt(process.env.DB_PORT || '5432');
-      config.database = process.env.DB_NAME || 'backlink_tracker';
-      config.user = process.env.DB_USER || 'backlink_user';
-      config.password = process.env.DB_PASSWORD || 'change_this_password';
-      config.ssl = false; // Disable SSL for local development
+      config.database = process.env.DB_NAME || 'postgres';
+      config.user = process.env.DB_USER || 'postgres';
+      config.password = process.env.DB_PASSWORD;
+      config.ssl = process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false;
     }
 
     pool = new Pool(config);
@@ -47,16 +54,26 @@ export function getDatabase(): Pool {
     // Handle pool errors
     pool.on('error', (err: Error) => {
       console.error('Unexpected error on idle client', err);
+      // Don't exit the process, just log the error
     });
 
-    // Log successful connection
+    // Handle connection events
+    pool.on('connect', () => {
+      console.log('New client connected to database');
+    });
+
+    pool.on('remove', () => {
+      console.log('Client removed from pool');
+    });
+
+    // Test initial connection
     pool.connect()
       .then((client: PoolClient) => {
-        console.log('PostgreSQL database connected successfully');
+        console.log('✅ PostgreSQL database connected successfully');
         client.release();
       })
       .catch((err: Error) => {
-        console.error('Failed to connect to PostgreSQL database:', err);
+        console.error('❌ Failed to connect to PostgreSQL database:', err.message);
       });
   }
 
@@ -74,16 +91,16 @@ export async function query(text: string, params?: unknown[]): Promise<QueryResu
     const result = await db.query(text, params);
     const duration = Date.now() - start;
     
-    // Log slow queries (> 100ms)
-    if (duration > 100) {
-      console.warn(`Slow query detected (${duration}ms):`, text);
+    // Log slow queries (> 200ms for cloud database)
+    if (duration > 200) {
+      console.warn(`⚠️ Slow query detected (${duration}ms):`, text.substring(0, 100) + '...');
     }
     
     return result;
   } catch (error) {
-    console.error('Database query error:', error);
-    console.error('Query:', text);
-    console.error('Params:', params);
+    console.error('❌ Database query error:', error);
+    console.error('🔍 Query:', text);
+    console.error('🔍 Params:', params);
     throw error;
   }
 }
@@ -104,6 +121,7 @@ export async function transaction<T>(
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
+    console.error('❌ Transaction rolled back:', error);
     throw error;
   } finally {
     client.release();
@@ -127,11 +145,55 @@ export async function closeDatabase(): Promise<void> {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const result = await query('SELECT NOW() as current_time');
-    console.log('Database connection test successful:', result.rows[0]);
+    const result = await query('SELECT NOW() as current_time, version() as pg_version');
+    console.log('✅ Database connection test successful');
+    console.log('📅 Current time:', result.rows[0].current_time);
+    console.log('🐘 PostgreSQL version:', result.rows[0].pg_version.split(' ')[0]);
     return true;
   } catch (error) {
-    console.error('Database connection test failed:', error);
+    console.error('❌ Database connection test failed:', error);
     return false;
   }
+}
+
+/**
+ * Check if connected to Supabase
+ */
+export function isSupabase(): boolean {
+  const databaseUrl = process.env.DATABASE_URL;
+  return databaseUrl ? databaseUrl.includes('supabase.co') : false;
+}
+
+/**
+ * Get database info
+ */
+export async function getDatabaseInfo(): Promise<{
+  isSupabase: boolean;
+  host: string;
+  database: string;
+  ssl: boolean;
+}> {
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const isSupabaseDb = isSupabase();
+  
+  // Parse connection info
+  let host = 'unknown';
+  let database = 'unknown';
+  
+  if (databaseUrl) {
+    try {
+      const url = new URL(databaseUrl);
+      host = url.hostname;
+      database = url.pathname.substring(1);
+    } catch {
+      console.warn('Could not parse DATABASE_URL');
+    }
+  }
+  
+  return {
+    isSupabase: isSupabaseDb,
+    host,
+    database,
+    ssl: process.env.NODE_ENV === 'production' || isSupabaseDb
+  };
 } 

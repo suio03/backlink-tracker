@@ -6,15 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "docker:dev": "./docker-dev.sh start",
-    "docker:dev:stop": "./docker-dev.sh stop",
-    "docker:dev:logs": "./docker-dev.sh logs",
-    "docker:dev:restart": "./docker-dev.sh restart",
-    "docker:dev:status": "./docker-dev.sh status",
-    "docker:dev:shell": "./docker-dev.sh shell",
-    "docker:prod": "docker compose up --build -d",
-    "docker:prod:stop": "docker compose down"
+    "lint": "next lint"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -25,6 +17,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^16.6.0",
     "lucide-react": "^0.513.0",
     "next": "15.3.3",
     "pg": "^8.13.1",

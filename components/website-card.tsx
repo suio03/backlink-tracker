@@ -41,20 +41,29 @@ export function WebsiteCard({ website, onClick, className }: WebsiteCardProps) {
         {/* Progress Section */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Progress</span>
+            <span className="text-gray-600">
+              Progress
+              <span className="text-xs text-gray-500 block">
+                ({website.placedBacklinks} of {website.totalOpportunities} placed)
+              </span>
+            </span>
             <span className="font-semibold text-gray-900">
               {completionRate}%
             </span>
           </div>
           <Progress value={completionRate} className="h-2" />
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>Placed</span>
+            <span>Total Opportunities</span>
+          </div>
         </div>
         
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="space-y-1">
-            <p className="text-gray-600">Live Links</p>
-            <p className="text-xl font-bold text-green-600">
-              {website.liveBacklinks}
+            <p className="text-gray-600">Placed</p>
+            <p className="text-xl font-bold text-blue-600">
+              {website.placedBacklinks}
             </p>
           </div>
           <div className="space-y-1">
@@ -63,16 +72,10 @@ export function WebsiteCard({ website, onClick, className }: WebsiteCardProps) {
               {website.totalOpportunities}
             </p>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 col-span-2">
             <p className="text-gray-600">Pending</p>
             <p className="text-lg font-semibold text-yellow-600">
               {website.pendingBacklinks}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-gray-600">Placed</p>
-            <p className="text-lg font-semibold text-blue-600">
-              {website.placedBacklinks}
             </p>
           </div>
         </div>

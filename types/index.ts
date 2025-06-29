@@ -1,5 +1,15 @@
 // TypeScript interfaces for Backlink Tracker
 
+// Extended website information stored in JSON
+export interface WebsiteExtendedInfo {
+  websiteId: number;
+  supportEmail?: string;
+  title?: string;
+  description?: string;
+  url?: string;
+  lastUpdated: string;
+}
+
 export interface Website {
   id: number;
   domain: string;

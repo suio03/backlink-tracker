@@ -1,0 +1,19 @@
+{
+  "websites": [
+    {
+      "websiteId": 9,
+      "supportEmail": "support@pixfy.io",
+      "title": "All-in-One AI Image generator",
+      "description": "Transform your ideas with Pixfy AI's advanced image generator. Create new images or edit existing ones through simple prompt.\n",
+      "url": "https://pixfy.io/",
+      "lastUpdated": "2025-06-29T11:45:22.274Z"
+    },
+    {
+      "websiteId": 13,
+      "title": "Zip Game",
+      "description": "Fill all cells and connect all dots in sequence - Fun Zip Game\n\n",
+      "url": "https://zipgame.net/",
+      "lastUpdated": "2025-06-29T11:45:55.006Z"
+    }
+  ]
+}

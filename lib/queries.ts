@@ -40,7 +40,7 @@ export async function getWebsitesWithStats(): Promise<WebsiteWithStats[]> {
       COUNT(CASE WHEN b.status = 'rejected' THEN 1 END) as rejected_backlinks,
       CASE 
         WHEN COUNT(b.id) > 0 
-        THEN ROUND(COUNT(CASE WHEN b.status = 'live' THEN 1 END) * 100.0 / COUNT(b.id), 1)
+        THEN ROUND(COUNT(CASE WHEN b.status = 'placed' THEN 1 END) * 100.0 / COUNT(b.id), 1)
         ELSE 0 
       END as completion_rate,
       MAX(b.updated_at) as last_activity

@@ -4,7 +4,10 @@ import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/navigation";
 import { ResourceTable } from "@/components/resource-table";
+import { WebsiteInfoForm } from "@/components/website-info-form";
+import { Button } from "@/components/ui/button";
 import { Website, BacklinkWithDetails } from "@/types";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 
 interface PageProps {
   params: Promise<{
@@ -19,6 +22,22 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
   const [backlinks, setBacklinks] = useState<BacklinkWithDetails[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showWebsiteInfo, setShowWebsiteInfo] = useState(true);
+
+  // Load toggle state from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('showWebsiteInfo');
+    if (saved !== null) {
+      setShowWebsiteInfo(JSON.parse(saved));
+    }
+  }, []);
+
+  // Save toggle state to localStorage when changed
+  const handleToggleWebsiteInfo = () => {
+    const newValue = !showWebsiteInfo;
+    setShowWebsiteInfo(newValue);
+    localStorage.setItem('showWebsiteInfo', JSON.stringify(newValue));
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -212,12 +231,59 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
     <div className="min-h-screen bg-gray-50">
       <Navigation />
       <div className="container mx-auto px-4 py-8">
-        <ResourceTable 
-          backlinks={backlinks}
-          onBacklinkUpdate={handleBacklinkUpdate}
-          onBulkUpdate={handleBulkUpdate}
-          isLoading={false}
-        />
+        {/* Header with Toggle Button */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{website.name}</h1>
+            <p className="text-gray-600">{website.domain}</p>
+          </div>
+          <Button
+            onClick={handleToggleWebsiteInfo}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            {showWebsiteInfo ? (
+              <>
+                <PanelRightClose className="h-4 w-4" />
+                Hide Info
+              </>
+            ) : (
+              <>
+                <PanelRightOpen className="h-4 w-4" />
+                Show Info
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className={`grid gap-6 transition-all duration-300 ease-in-out ${
+          showWebsiteInfo ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'
+        }`}>
+          {/* Main Content - Backlinks Table */}
+          <div className={`transition-all duration-300 ease-in-out ${
+            showWebsiteInfo ? 'lg:col-span-2' : 'col-span-1'
+          }`}>
+            <ResourceTable 
+              backlinks={backlinks}
+              onBacklinkUpdate={handleBacklinkUpdate}
+              onBulkUpdate={handleBulkUpdate}
+              isLoading={false}
+            />
+          </div>
+          
+          {/* Sidebar - Website Information */}
+          <div className={`lg:col-span-1 transition-all duration-300 ease-in-out overflow-hidden ${
+            showWebsiteInfo 
+              ? 'opacity-100 translate-x-0 max-w-full' 
+              : 'opacity-0 translate-x-full max-w-0 lg:hidden'
+          }`}>
+            <WebsiteInfoForm 
+              websiteId={website.id}
+              websiteName={website.name}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

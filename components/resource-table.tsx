@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "./status-badge";
 import { BacklinkWithDetails, BacklinkStatus, BacklinkFilters } from "@/types";
-import { Search, Filter, Edit2, Save, X, ExternalLink, MousePointer, Globe } from "lucide-react";
+import { Search, Filter, Edit2, Save, X, MousePointer, Globe } from "lucide-react";
 
 interface ResourceTableProps {
   backlinks: BacklinkWithDetails[];
@@ -26,8 +26,6 @@ interface ResourceTableProps {
 
 interface EditingState {
   [key: number]: {
-    anchor_text?: string;
-    target_url?: string;
     status?: BacklinkStatus;
   };
 }
@@ -110,8 +108,6 @@ export function ResourceTable({
     setEditingRows(prev => ({
       ...prev,
       [backlink.id]: {
-        anchor_text: backlink.anchor_text || "",
-        target_url: backlink.target_url || "",
         status: backlink.status,
       }
     }));
@@ -133,12 +129,11 @@ export function ResourceTable({
     }
   };
 
-  const updateEditing = (id: number, field: string, value: string) => {
+  const updateEditing = (id: number, value: BacklinkStatus) => {
     setEditingRows(prev => ({
       ...prev,
       [id]: {
-        ...prev[id],
-        [field]: value,
+        status: value,
       }
     }));
   };
@@ -436,8 +431,6 @@ export function ResourceTable({
               </TableHead>
               <TableHead>Resource</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Anchor Text</TableHead>
-              <TableHead>Target URL</TableHead>
               <TableHead>DA</TableHead>
               <TableHead>Cost</TableHead>
               <TableHead>Actions</TableHead>
@@ -468,7 +461,7 @@ export function ResourceTable({
                     {isEditing ? (
                       <Select
                         value={isEditing.status}
-                        onValueChange={(value) => updateEditing(backlink.id, 'status', value)}
+                        onValueChange={(value) => updateEditing(backlink.id, value as BacklinkStatus)}
                       >
                         <SelectTrigger className="w-32">
                           <SelectValue />
@@ -482,47 +475,6 @@ export function ResourceTable({
                       </Select>
                     ) : (
                       <StatusBadge status={backlink.status} />
-                    )}
-                  </TableCell>
-                  
-                  <TableCell>
-                    {isEditing ? (
-                      <Input
-                        value={isEditing.anchor_text}
-                        onChange={(e) => updateEditing(backlink.id, 'anchor_text', e.target.value)}
-                        placeholder="Enter anchor text..."
-                        className="w-40"
-                      />
-                    ) : (
-                      <span className="text-sm">
-                        {backlink.anchor_text || (
-                          <span className="text-gray-400 italic">No anchor text</span>
-                        )}
-                      </span>
-                    )}
-                  </TableCell>
-                  
-                  <TableCell>
-                    {isEditing ? (
-                      <Input
-                        value={isEditing.target_url}
-                        onChange={(e) => updateEditing(backlink.id, 'target_url', e.target.value)}
-                        placeholder="Enter target URL..."
-                        className="w-48"
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        {backlink.target_url ? (
-                          <>
-                            <span className="text-sm text-blue-600 truncate max-w-32">
-                              {backlink.target_url}
-                            </span>
-                            <ExternalLink className="h-3 w-3 text-gray-400" />
-                          </>
-                        ) : (
-                          <span className="text-gray-400 italic text-sm">No URL</span>
-                        )}
-                      </div>
                     )}
                   </TableCell>
                   

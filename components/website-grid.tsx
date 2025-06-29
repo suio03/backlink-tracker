@@ -56,10 +56,23 @@ export function WebsiteGrid({ websites, onWebsiteSelect, isLoading = false }: We
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">🔥 My Websites - Hot Reload Active!</h1>
+          <h1 className="text-3xl font-bold text-gray-900">🔥 My Websites</h1>
           <p className="text-gray-600 mt-1">
             Manage backlinks across {websites.length} websites
           </p>
+          {websites.length > 0 && (
+            <div className="flex gap-4 mt-2 text-sm text-gray-500">
+              <span>
+                📊 {websites.reduce((acc, w) => acc + w.totalOpportunities, 0)} total opportunities
+              </span>
+              <span>
+                ✅ {websites.reduce((acc, w) => acc + w.placedBacklinks, 0)} placed
+              </span>
+              <span>
+                ⏳ {websites.reduce((acc, w) => acc + w.pendingBacklinks, 0)} pending
+              </span>
+            </div>
+          )}
         </div>
         
         <div className="text-sm text-gray-500">

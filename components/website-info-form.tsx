@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WebsiteExtendedInfo } from "@/types";
-import { Save, Edit3, Trash2, Mail, Globe, FileText } from "lucide-react";
+import { Save, Edit3, Trash2, Mail, Globe, FileText, Copy, Check } from "lucide-react";
 
 interface WebsiteInfoFormProps {
   websiteId: number;
@@ -17,6 +17,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     supportEmail: '',
     title: '',
@@ -155,6 +156,31 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
     }
   };
 
+  const handleCopy = async (text: string, fieldName: string) => {
+    if (!text) return;
+    
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldName);
+      setTimeout(() => setCopiedField(null), 2000); // Reset after 2 seconds
+    } catch (error) {
+      console.error('Failed to copy text:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedField(fieldName);
+        setTimeout(() => setCopiedField(null), 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -208,8 +234,23 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
               placeholder="support@example.com"
             />
           ) : (
-            <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded">
-              {websiteInfo?.supportEmail || 'Not specified'}
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <span className="text-sm text-gray-600">
+                {websiteInfo?.supportEmail || 'Not specified'}
+              </span>
+              {websiteInfo?.supportEmail && (
+                <button
+                  onClick={() => handleCopy(websiteInfo.supportEmail!, 'supportEmail')}
+                  className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Copy email"
+                >
+                  {copiedField === 'supportEmail' ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -227,8 +268,23 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
               placeholder="Website Title"
             />
           ) : (
-            <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded">
-              {websiteInfo?.title || 'Not specified'}
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <span className="text-sm text-gray-600">
+                {websiteInfo?.title || 'Not specified'}
+              </span>
+              {websiteInfo?.title && (
+                <button
+                  onClick={() => handleCopy(websiteInfo.title!, 'title')}
+                  className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Copy title"
+                >
+                  {copiedField === 'title' ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -248,8 +304,23 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
               rows={3}
             />
           ) : (
-            <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded min-h-[60px]">
-              {websiteInfo?.description || 'Not specified'}
+            <div className="flex items-start justify-between p-2 bg-gray-50 rounded min-h-[60px]">
+              <span className="text-sm text-gray-600 flex-1">
+                {websiteInfo?.description || 'Not specified'}
+              </span>
+              {websiteInfo?.description && (
+                <button
+                  onClick={() => handleCopy(websiteInfo.description!, 'description')}
+                  className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                  title="Copy description"
+                >
+                  {copiedField === 'description' ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -268,18 +339,33 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
               placeholder="https://example.com"
             />
           ) : (
-            <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded">
-              {websiteInfo?.url ? (
-                <a 
-                  href={websiteInfo.url} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-blue-600 hover:underline"
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <span className="text-sm text-gray-600 flex-1">
+                {websiteInfo?.url ? (
+                  <a 
+                    href={websiteInfo.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-blue-600 hover:underline"
+                  >
+                    {websiteInfo.url}
+                  </a>
+                ) : (
+                  'Not specified'
+                )}
+              </span>
+              {websiteInfo?.url && (
+                <button
+                  onClick={() => handleCopy(websiteInfo.url!, 'url')}
+                  className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
+                  title="Copy URL"
                 >
-                  {websiteInfo.url}
-                </a>
-              ) : (
-                'Not specified'
+                  {copiedField === 'url' ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
               )}
             </div>
           )}

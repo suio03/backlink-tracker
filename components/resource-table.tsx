@@ -176,39 +176,47 @@ export function ResourceTable({
   // Open selected backlinks in new tabs (without changing status)
   const openSelectedBacklinks = () => {
     const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
+    const validBacklinks = selectedBacklinks.filter(b => b.resource.url);
     
-    // Open each resource URL in a new tab
-    const openedCount = selectedBacklinks.filter(backlink => {
-      if (backlink.resource.url) {
+    if (validBacklinks.length === 0) {
+      alert('No valid URLs found in selected backlinks.');
+      return;
+    }
+
+    // Open URLs with delay to prevent popup blocker
+    validBacklinks.forEach((backlink, index) => {
+      setTimeout(() => {
         window.open(backlink.resource.url, '_blank', 'noopener,noreferrer');
-        return true;
-      }
-      return false;
-    }).length;
+      }, index * 100); // 100ms delay between each tab
+    });
 
     // Show confirmation
-    if (selectedBacklinks.length > 0) {
-      const invalidUrls = selectedBacklinks.length - openedCount;
-      
-      if (invalidUrls > 0) {
-        alert(`Opened ${openedCount} tabs. ${invalidUrls} backlinks had no URL.`);
-      } else {
-        console.log(`Opened ${openedCount} tabs for review.`);
-      }
+    const invalidUrls = selectedBacklinks.length - validBacklinks.length;
+    
+    if (invalidUrls > 0) {
+      alert(`Opening ${validBacklinks.length} tabs. ${invalidUrls} backlinks had no URL.`);
+    } else {
+      console.log(`Opening ${validBacklinks.length} tabs for review.`);
     }
   };
 
   // Open selected backlinks and mark as placed
   const openAndMarkPlaced = () => {
     const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
+    const validBacklinks = selectedBacklinks.filter(b => b.resource.url);
     
-    // Open each resource URL in a new tab
+    if (validBacklinks.length === 0) {
+      alert('No valid URLs found in selected backlinks.');
+      return;
+    }
+
+    // Open URLs with delay to prevent popup blocker
     const openedBacklinks: number[] = [];
-    selectedBacklinks.forEach(backlink => {
-      if (backlink.resource.url) {
+    validBacklinks.forEach((backlink, index) => {
+      setTimeout(() => {
         window.open(backlink.resource.url, '_blank', 'noopener,noreferrer');
-        openedBacklinks.push(backlink.id);
-      }
+      }, index * 100); // 100ms delay between each tab
+      openedBacklinks.push(backlink.id);
     });
 
     // Auto-mark opened backlinks as "placed"
@@ -220,16 +228,12 @@ export function ResourceTable({
     setSelectedIds(new Set());
 
     // Show confirmation
-    if (selectedBacklinks.length > 0) {
-      const validUrls = selectedBacklinks.filter(b => b.resource.url).length;
-      const invalidUrls = selectedBacklinks.length - validUrls;
-      
-      if (invalidUrls > 0) {
-        alert(`Opened ${validUrls} tabs and marked them as "Placed". ${invalidUrls} backlinks had no URL.`);
-      } else {
-        // Optional: Show a brief success message
-        console.log(`Opened ${validUrls} tabs and marked them as "Placed".`);
-      }
+    const invalidUrls = selectedBacklinks.length - validBacklinks.length;
+    
+    if (invalidUrls > 0) {
+      alert(`Opening ${validBacklinks.length} tabs and marked them as "Placed". ${invalidUrls} backlinks had no URL.`);
+    } else {
+      console.log(`Opening ${validBacklinks.length} tabs and marked them as "Placed".`);
     }
   };
 
@@ -459,13 +463,6 @@ export function ResourceTable({
               onClick={() => handleBulkStatusUpdate('placed')}
             >
               Mark as Placed
-            </Button>
-            <Button 
-              size="sm" 
-              variant="outline"
-              onClick={() => handleBulkStatusUpdate('live')}
-            >
-              Mark as Live
             </Button>
             <Button 
               size="sm" 

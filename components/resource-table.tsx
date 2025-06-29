@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "./status-badge";
 import { BacklinkWithDetails, BacklinkStatus, BacklinkFilters } from "@/types";
-import { Search, Filter, Edit2, Save, X, ExternalLink } from "lucide-react";
+import { Search, Filter, Edit2, Save, X, ExternalLink, MousePointer, Globe } from "lucide-react";
 
 interface ResourceTableProps {
   backlinks: BacklinkWithDetails[];
@@ -42,7 +42,7 @@ export function ResourceTable({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [editingRows, setEditingRows] = useState<EditingState>({});
   
-  // Filter backlinks
+  // Filter and sort backlinks - placed items go to bottom
   const filteredBacklinks = backlinks.filter(backlink => {
     const matchesSearch = !filters.search || 
       backlink.resource.domain.toLowerCase().includes(filters.search.toLowerCase());
@@ -57,6 +57,33 @@ export function ResourceTable({
       backlink.resource.cost <= filters.maxCost;
     
     return matchesSearch && matchesStatus && matchesDA && matchesCost;
+  }).sort((a, b) => {
+    // Sort placed/live items to bottom, maintain original order within groups
+    const aIsPlaced = a.status === 'placed' || a.status === 'live';
+    const bIsPlaced = b.status === 'placed' || b.status === 'live';
+    
+    if (aIsPlaced && !bIsPlaced) return 1;  // a goes after b
+    if (!aIsPlaced && bIsPlaced) return -1; // a goes before b
+    
+    // Within same group, sort by priority and domain authority
+    if (!aIsPlaced && !bIsPlaced) {
+      // For non-placed: pending first, then by DA desc
+      const statusPriority: Record<string, number> = {
+        'pending': 1,
+        'requested': 2,
+        'rejected': 3,
+        'removed': 4
+      };
+      
+      const aPriority = statusPriority[a.status] || 5;
+      const bPriority = statusPriority[b.status] || 5;
+      
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return b.resource.domain_authority - a.resource.domain_authority;
+    }
+    
+    // For placed items, sort by domain authority desc
+    return b.resource.domain_authority - a.resource.domain_authority;
   });
 
   // Bulk selection handlers
@@ -114,6 +141,76 @@ export function ResourceTable({
         [field]: value,
       }
     }));
+  };
+
+  // Quick selection functions - focus on non-placed backlinks
+  const getNonPlacedBacklinks = () => {
+    return filteredBacklinks.filter(b => b.status !== 'placed' && b.status !== 'live');
+  };
+
+  const selectFirst5 = () => {
+    const nonPlaced = getNonPlacedBacklinks();
+    const first5Ids = nonPlaced.slice(0, 5).map(b => b.id);
+    setSelectedIds(new Set(first5Ids));
+  };
+
+  const selectLast5 = () => {
+    const nonPlaced = getNonPlacedBacklinks();
+    const last5Ids = nonPlaced.slice(-5).map(b => b.id);
+    setSelectedIds(new Set(last5Ids));
+  };
+
+  const selectFirst10 = () => {
+    const nonPlaced = getNonPlacedBacklinks();
+    const first10Ids = nonPlaced.slice(0, 10).map(b => b.id);
+    setSelectedIds(new Set(first10Ids));
+  };
+
+  const selectLast10 = () => {
+    const nonPlaced = getNonPlacedBacklinks();
+    const last10Ids = nonPlaced.slice(-10).map(b => b.id);
+    setSelectedIds(new Set(last10Ids));
+  };
+
+  const selectAllNonPlaced = () => {
+    const nonPlaced = getNonPlacedBacklinks();
+    const nonPlacedIds = nonPlaced.map(b => b.id);
+    setSelectedIds(new Set(nonPlacedIds));
+  };
+
+  // Open selected backlinks in new tabs and mark as placed
+  const openSelectedBacklinks = () => {
+    const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
+    
+    // Open each resource URL in a new tab
+    const openedBacklinks: number[] = [];
+    selectedBacklinks.forEach(backlink => {
+      if (backlink.resource.url) {
+        window.open(backlink.resource.url, '_blank', 'noopener,noreferrer');
+        openedBacklinks.push(backlink.id);
+      }
+    });
+
+    // Auto-mark opened backlinks as "placed"
+    if (openedBacklinks.length > 0 && onBulkUpdate) {
+      onBulkUpdate(openedBacklinks, { status: 'placed' });
+    }
+
+    // Clear selection
+    setSelectedIds(new Set());
+
+    // Show confirmation
+    if (selectedBacklinks.length > 0) {
+      const validUrls = selectedBacklinks.filter(b => b.resource.url).length;
+      const invalidUrls = selectedBacklinks.length - validUrls;
+      
+      if (invalidUrls > 0) {
+        alert(`Opened ${validUrls} tabs and marked them as "Placed". ${invalidUrls} backlinks had no URL.`);
+      } else {
+        // Optional: Show a brief success message
+        console.log(`Opened ${validUrls} tabs and marked them as "Placed".`);
+      }
+    }
   };
 
   // Bulk operations
@@ -197,6 +294,81 @@ export function ResourceTable({
         </Select>
       </div>
 
+      {/* Quick Selection Toolbar */}
+      {filteredBacklinks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+          <span className="text-sm font-medium text-gray-700 mr-2">Quick Select (Non-Placed):</span>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={selectFirst5}
+            disabled={getNonPlacedBacklinks().length === 0}
+            className="text-xs"
+          >
+            <MousePointer className="h-3 w-3 mr-1" />
+            Top 5
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={selectLast5}
+            disabled={getNonPlacedBacklinks().length === 0}
+            className="text-xs"
+          >
+            <MousePointer className="h-3 w-3 mr-1" />
+            Last 5
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={selectFirst10}
+            disabled={getNonPlacedBacklinks().length === 0}
+            className="text-xs"
+          >
+            <MousePointer className="h-3 w-3 mr-1" />
+            Top 10
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={selectLast10}
+            disabled={getNonPlacedBacklinks().length === 0}
+            className="text-xs"
+          >
+            <MousePointer className="h-3 w-3 mr-1" />
+            Last 10
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={selectAllNonPlaced}
+            disabled={getNonPlacedBacklinks().length === 0}
+            className="text-xs"
+          >
+            All Non-Placed ({getNonPlacedBacklinks().length})
+          </Button>
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={toggleSelectAll}
+            disabled={filteredBacklinks.length === 0}
+            className="text-xs bg-blue-50 border-blue-200"
+          >
+            {selectedIds.size === filteredBacklinks.length && filteredBacklinks.length > 0 
+              ? "Deselect All" 
+              : `All Items (${filteredBacklinks.length})`
+            }
+          </Button>
+          {selectedIds.size > 0 && (
+            <div className="ml-auto">
+              <span className="text-sm text-blue-600 font-medium">
+                {selectedIds.size} selected
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Bulk Actions */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -221,6 +393,15 @@ export function ResourceTable({
             <Button 
               size="sm" 
               variant="outline"
+              onClick={openSelectedBacklinks}
+              className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+            >
+              <Globe className="h-3 w-3 mr-1" />
+              Open & Mark Placed
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
               onClick={() => setSelectedIds(new Set())}
             >
               Clear Selection
@@ -233,6 +414,8 @@ export function ResourceTable({
       <div className="flex justify-between items-center text-sm text-gray-600">
         <span>{filteredBacklinks.length} backlink opportunities</span>
         <div className="flex gap-4">
+          <span>Non-Placed: {getNonPlacedBacklinks().length}</span>
+          <span>Placed: {filteredBacklinks.filter(b => b.status === 'placed').length}</span>
           <span>Live: {filteredBacklinks.filter(b => b.status === 'live').length}</span>
           <span>Pending: {filteredBacklinks.filter(b => b.status === 'pending').length}</span>
         </div>

@@ -85,17 +85,8 @@ export function getDatabase(): Pool {
  */
 export async function query(text: string, params?: unknown[]): Promise<QueryResult> {
   const db = getDatabase();
-  const start = Date.now();
-  
   try {
     const result = await db.query(text, params);
-    const duration = Date.now() - start;
-    
-    // Log slow queries (> 200ms for cloud database)
-    if (duration > 200) {
-      console.warn(`⚠️ Slow query detected (${duration}ms):`, text.substring(0, 100) + '...');
-    }
-    
     return result;
   } catch (error) {
     console.error('❌ Database query error:', error);

@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "./status-badge";
 import { BacklinkWithDetails, BacklinkStatus, BacklinkFilters } from "@/types";
-import { Search, Filter, Edit2, Save, X, MousePointer, Globe } from "lucide-react";
+import { Search, Filter, Edit2, Save, X, MousePointer, Globe, Trash2 } from "lucide-react";
 
 interface ResourceTableProps {
   backlinks: BacklinkWithDetails[];
@@ -173,8 +173,33 @@ export function ResourceTable({
     setSelectedIds(new Set(nonPlacedIds));
   };
 
-  // Open selected backlinks in new tabs and mark as placed
+  // Open selected backlinks in new tabs (without changing status)
   const openSelectedBacklinks = () => {
+    const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
+    
+    // Open each resource URL in a new tab
+    const openedCount = selectedBacklinks.filter(backlink => {
+      if (backlink.resource.url) {
+        window.open(backlink.resource.url, '_blank', 'noopener,noreferrer');
+        return true;
+      }
+      return false;
+    }).length;
+
+    // Show confirmation
+    if (selectedBacklinks.length > 0) {
+      const invalidUrls = selectedBacklinks.length - openedCount;
+      
+      if (invalidUrls > 0) {
+        alert(`Opened ${openedCount} tabs. ${invalidUrls} backlinks had no URL.`);
+      } else {
+        console.log(`Opened ${openedCount} tabs for review.`);
+      }
+    }
+  };
+
+  // Open selected backlinks and mark as placed
+  const openAndMarkPlaced = () => {
     const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
     
     // Open each resource URL in a new tab
@@ -205,6 +230,63 @@ export function ResourceTable({
         // Optional: Show a brief success message
         console.log(`Opened ${validUrls} tabs and marked them as "Placed".`);
       }
+    }
+  };
+
+  // Delete selected resources (for broken/non-working links)
+  const deleteSelectedResources = async () => {
+    const selectedBacklinks = filteredBacklinks.filter(b => selectedIds.has(b.id));
+    const uniqueResourceIds = [...new Set(selectedBacklinks.map(b => b.resource.id))];
+    
+    if (uniqueResourceIds.length === 0) return;
+
+    // Get unique resource domains for confirmation
+    const selectedResources = selectedBacklinks.reduce((acc, backlink) => {
+      if (!acc.find(r => r.id === backlink.resource.id)) {
+        acc.push(backlink.resource);
+      }
+      return acc;
+    }, [] as Array<{id: number, domain: string}>);
+
+    const resourceList = selectedResources.map(r => `• ${r.domain}`).join('\n');
+    const confirmMessage = `Are you sure you want to delete ${uniqueResourceIds.length} resource(s)?\n\nResources to be deleted:\n${resourceList}\n\nThis will permanently remove these resources and all their backlinks from the system for ALL websites.\n\nThis action cannot be undone.`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      // Delete each resource
+      const deletePromises = uniqueResourceIds.map(resourceId =>
+        fetch(`/api/resources/${resourceId}`, {
+          method: 'DELETE',
+        })
+      );
+
+      const responses = await Promise.all(deletePromises);
+      const results = await Promise.all(responses.map(r => r.json()));
+
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+
+      if (successCount > 0) {
+        // Refresh the page to show updated data
+        window.location.reload();
+      }
+
+      // Clear selection
+      setSelectedIds(new Set());
+
+      // Show results
+      if (failureCount > 0) {
+        alert(`Deleted ${successCount} resources successfully. ${failureCount} failed to delete.`);
+      } else {
+        alert(`Successfully deleted ${successCount} resource(s) and all their backlinks.`);
+      }
+
+    } catch (error) {
+      console.error('Error deleting resources:', error);
+      alert('Failed to delete resources. Please try again.');
     }
   };
 
@@ -389,10 +471,28 @@ export function ResourceTable({
               size="sm" 
               variant="outline"
               onClick={openSelectedBacklinks}
+              className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+            >
+              <Globe className="h-3 w-3 mr-1" />
+              Open Selected
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={openAndMarkPlaced}
               className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
             >
               <Globe className="h-3 w-3 mr-1" />
               Open & Mark Placed
+            </Button>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={deleteSelectedResources}
+              className="bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+            >
+              <Trash2 className="h-3 w-3 mr-1" />
+              Delete Resources
             </Button>
             <Button 
               size="sm" 

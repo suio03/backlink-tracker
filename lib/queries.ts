@@ -215,6 +215,25 @@ export async function updateBacklink(
 }
 
 /**
+ * Delete a specific backlink
+ */
+export async function deleteBacklink(id: number): Promise<boolean> {
+  const sql = `
+    DELETE FROM backlinks 
+    WHERE id = $1
+    RETURNING id;
+  `;
+
+  try {
+    const result = await query(sql, [id]);
+    return result.rows.length > 0;
+  } catch (error) {
+    console.error('Error deleting backlink:', error);
+    return false;
+  }
+}
+
+/**
  * Get summary statistics for dashboard
  */
 export async function getDashboardStats(): Promise<{

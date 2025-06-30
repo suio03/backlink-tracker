@@ -156,6 +156,11 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
     }
   };
 
+  const handleBacklinkDelete = (deletedId: number) => {
+    // Remove the deleted backlink from the state
+    setBacklinks(prev => prev.filter(backlink => backlink.id !== deletedId));
+  };
+
   const handleBack = () => {
     router.push("/");
   };
@@ -268,6 +273,7 @@ export default function WebsiteResourcesPage({ params }: PageProps) {
               backlinks={backlinks}
               onBacklinkUpdate={handleBacklinkUpdate}
               onBulkUpdate={handleBulkUpdate}
+              onBacklinkDelete={handleBacklinkDelete}
               isLoading={false}
             />
           </div>

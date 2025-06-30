@@ -1,10 +1,11 @@
 /**
  * Backlink Update API Route
  * PATCH /api/backlinks/[id] - Update backlink details
+ * DELETE /api/backlinks/[id] - Delete backlink
  */
 
 import { NextResponse } from 'next/server';
-import { updateBacklink } from '@/lib/queries';
+import { updateBacklink, deleteBacklink } from '@/lib/queries';
 
 export async function PATCH(
   request: Request,
@@ -78,6 +79,53 @@ export async function PATCH(
       {
         success: false,
         message: 'Failed to update backlink'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const backlinkId = parseInt(id);
+    
+    if (isNaN(backlinkId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Invalid backlink ID'
+        },
+        { status: 400 }
+      );
+    }
+    
+    const success = await deleteBacklink(backlinkId);
+    
+    if (!success) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Failed to delete backlink or backlink not found'
+        },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Backlink deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting backlink:', error);
+    
+    return NextResponse.json(
+      {
+        success: false,
+        message: 'Failed to delete backlink'
       },
       { status: 500 }
     );

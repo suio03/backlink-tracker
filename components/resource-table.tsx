@@ -21,6 +21,7 @@ interface ResourceTableProps {
   backlinks: BacklinkWithDetails[];
   onBacklinkUpdate: (id: number, updates: Partial<BacklinkWithDetails>) => void;
   onBulkUpdate?: (ids: number[], updates: Partial<BacklinkWithDetails>) => void;
+  onBacklinkDelete?: (id: number) => void;
   isLoading?: boolean;
 }
 
@@ -34,6 +35,7 @@ export function ResourceTable({
   backlinks, 
   onBacklinkUpdate, 
   onBulkUpdate,
+  onBacklinkDelete,
   isLoading = false 
 }: ResourceTableProps) {
   const [filters, setFilters] = useState<BacklinkFilters>({});
@@ -234,6 +236,41 @@ export function ResourceTable({
       alert(`Opening ${validBacklinks.length} tabs and marked them as "Placed". ${invalidUrls} backlinks had no URL.`);
     } else {
       console.log(`Opening ${validBacklinks.length} tabs and marked them as "Placed".`);
+    }
+  };
+
+  // Delete individual backlink
+  const handleDeleteBacklink = async (backlinkId: number) => {
+    const backlink = filteredBacklinks.find(b => b.id === backlinkId);
+    if (!backlink) return;
+
+    const confirmMessage = `Are you sure you want to delete this backlink from "${backlink.resource.domain}"?\n\nThis will only remove the backlink relationship for this website, not the resource itself.\n\nThis action cannot be undone.`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/backlinks/${backlinkId}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Call the parent callback to update the UI
+        if (onBacklinkDelete) {
+          onBacklinkDelete(backlinkId);
+        } else {
+          // Fallback: refresh the page
+          window.location.reload();
+        }
+      } else {
+        alert(`Failed to delete backlink: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error deleting backlink:', error);
+      alert('Failed to delete backlink. Please try again.');
     }
   };
 
@@ -529,8 +566,8 @@ export function ResourceTable({
               <TableHead>Resource</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>DA</TableHead>
-              <TableHead>Cost</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead>Backlink Actions</TableHead>
+              <TableHead>Status Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -582,9 +619,26 @@ export function ResourceTable({
                   </TableCell>
                   
                   <TableCell>
-                    <span className="text-sm">
-                      {backlink.resource.cost > 0 ? `$${backlink.resource.cost}` : 'Free'}
-                    </span>
+                    <div className="flex gap-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => startEditing(backlink)}
+                        className="text-xs"
+                        title="Edit backlink"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleDeleteBacklink(backlink.id)}
+                        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                        title="Delete backlink"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </TableCell>
                   
                   <TableCell>
@@ -594,6 +648,7 @@ export function ResourceTable({
                           size="sm" 
                           variant="outline"
                           onClick={() => saveEditing(backlink.id)}
+                          title="Save status changes"
                         >
                           <Save className="h-3 w-3" />
                         </Button>
@@ -601,18 +656,13 @@ export function ResourceTable({
                           size="sm" 
                           variant="ghost"
                           onClick={() => cancelEditing(backlink.id)}
+                          title="Cancel status changes"
                         >
                           <X className="h-3 w-3" />
                         </Button>
                       </div>
                     ) : (
-                      <Button 
-                        size="sm" 
-                        variant="ghost"
-                        onClick={() => startEditing(backlink)}
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </Button>
+                      <span className="text-gray-400 text-xs">-</span>
                     )}
                   </TableCell>
                 </TableRow>

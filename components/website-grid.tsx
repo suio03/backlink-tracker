@@ -13,9 +13,20 @@ interface WebsiteGridProps {
 
 export function WebsiteGrid({ websites, onWebsiteSelect, isLoading = false }: WebsiteGridProps) {
   const [filters, setFilters] = useState<WebsiteFilters>({});
+  const [searchInput, setSearchInput] = useState("");
   
   // Get unique categories for filter dropdown
   const categories = Array.from(new Set(websites.map(w => w.category)));
+  
+  const handleSearch = () => {
+    setFilters(prev => ({ ...prev, search: searchInput }));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
   
   // Filter websites based on current filters
   const filteredWebsites = websites.filter(website => {
@@ -83,14 +94,23 @@ export function WebsiteGrid({ websites, onWebsiteSelect, isLoading = false }: We
       {/* Filters Section */}
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input
-            placeholder="Search websites by domain or name..."
-            value={filters.search || ""}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-            className="pl-10"
-          />
+        <div className="flex gap-2 flex-1">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Search websites by domain or name..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="pl-10"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Search
+          </button>
         </div>
         
         {/* Category Filter */}

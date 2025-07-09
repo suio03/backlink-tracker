@@ -28,6 +28,7 @@ interface ResourceTableProps {
 interface EditingState {
   [key: number]: {
     status?: BacklinkStatus;
+    domain_authority?: number;
   };
 }
 
@@ -122,6 +123,7 @@ export function ResourceTable({
       ...prev,
       [backlink.id]: {
         status: backlink.status,
+        domain_authority: backlink.resource.domain_authority,
       }
     }));
   };
@@ -134,11 +136,53 @@ export function ResourceTable({
     });
   };
 
-  const saveEditing = (id: number) => {
+  const saveEditing = async (id: number) => {
     const edits = editingRows[id];
-    if (edits) {
-      onBacklinkUpdate(id, edits);
+    if (!edits) return;
+
+    const backlink = filteredBacklinks.find(b => b.id === id);
+    if (!backlink) return;
+
+    try {
+      // Handle domain authority update (resource-level)
+      if (edits.domain_authority !== undefined && edits.domain_authority !== backlink.resource.domain_authority) {
+        const response = await fetch(`/api/resources/${backlink.resource.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            domain_authority: edits.domain_authority,
+          }),
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+          alert(`Failed to update domain authority: ${result.message}`);
+          return;
+        }
+      }
+
+      // Handle backlink-level updates (status, etc.)
+      const backlinkUpdates: Partial<BacklinkWithDetails> = {};
+      if (edits.status !== undefined && edits.status !== backlink.status) {
+        backlinkUpdates.status = edits.status;
+      }
+
+      if (Object.keys(backlinkUpdates).length > 0) {
+        onBacklinkUpdate(id, backlinkUpdates);
+      }
+
+      // Cancel editing mode
       cancelEditing(id);
+
+      // Refresh the page to show updated DA across all backlinks
+      if (edits.domain_authority !== undefined && edits.domain_authority !== backlink.resource.domain_authority) {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      alert('Failed to save changes. Please try again.');
     }
   };
 
@@ -146,7 +190,18 @@ export function ResourceTable({
     setEditingRows(prev => ({
       ...prev,
       [id]: {
-        status: value,
+        ...prev[id],
+        status: value
+      }
+    }));
+  };
+
+  const updateEditingDA = (id: number, value: number) => {
+    setEditingRows(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        domain_authority: value
       }
     }));
   };
@@ -633,9 +688,21 @@ export function ResourceTable({
                   </TableCell>
                   
                   <TableCell>
-                    <Badge variant="outline">
-                      {backlink.resource.domain_authority}
-                    </Badge>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={isEditing.domain_authority || 0}
+                        onChange={(e) => updateEditingDA(backlink.id, parseInt(e.target.value) || 0)}
+                        className="w-16 px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="DA"
+                      />
+                    ) : (
+                      <Badge variant="outline">
+                        {backlink.resource.domain_authority}
+                      </Badge>
+                    )}
                   </TableCell>
                   
                   <TableCell>

@@ -3,8 +3,8 @@
     {
       "websiteId": 9,
       "supportEmail": "support@pixfy.io",
-      "title": "All-in-One AI Image generator",
-      "description": "Transform your ideas with Pixfy AI's advanced image generator. Create new images or edit existing ones through simple prompt.\n",
+      "title": "All-in-One AI Image Editor",
+      "description": "Pixfy AI is your all-in-one suite of powerful AI image editing tools. Instantly enhance photo quality, upscale low-resolution images, perform creative face swaps, and much more. Turn your simple photos into professional-quality visuals in seconds, for free.\n",
       "url": "https://pixfy.io/",
       "lastUpdated": "2025-06-29T11:45:22.274Z"
     },
@@ -14,6 +14,13 @@
       "description": "Fill all cells and connect all dots in sequence - Fun Zip Game\n\n",
       "url": "https://zipgame.net/",
       "lastUpdated": "2025-06-29T11:45:55.006Z"
+    },
+    {
+      "websiteId": 7,
+      "title": "Photo rater",
+      "description": "Photo rater",
+      "url": "https://photorater.io/",
+      "lastUpdated": "2025-07-09T06:26:40.523Z"
     }
   ]
 }

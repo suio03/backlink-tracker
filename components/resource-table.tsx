@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "./status-badge";
 import { BacklinkWithDetails, BacklinkStatus, BacklinkFilters } from "@/types";
-import { Search, Filter, Edit2, Save, X, MousePointer, Globe, Trash2 } from "lucide-react";
+import { Search, Filter, Edit2, MousePointer, Globe, Trash2 } from "lucide-react";
 
 interface ResourceTableProps {
   backlinks: BacklinkWithDetails[];
@@ -25,12 +25,6 @@ interface ResourceTableProps {
   isLoading?: boolean;
 }
 
-interface EditingState {
-  [key: number]: {
-    status?: BacklinkStatus;
-    domain_authority?: number;
-  };
-}
 
 export function ResourceTable({ 
   backlinks, 
@@ -42,7 +36,6 @@ export function ResourceTable({
   const [filters, setFilters] = useState<BacklinkFilters>({});
   const [searchInput, setSearchInput] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [editingRows, setEditingRows] = useState<EditingState>({});
   
   const handleSearch = () => {
     setFilters(prev => ({ ...prev, search: searchInput }));
@@ -117,94 +110,23 @@ export function ResourceTable({
     setSelectedIds(newSelected);
   };
 
-  // Editing handlers
-  const startEditing = (backlink: BacklinkWithDetails) => {
-    setEditingRows(prev => ({
-      ...prev,
-      [backlink.id]: {
-        status: backlink.status,
-        domain_authority: backlink.resource.domain_authority,
+  // Simple edit handler for status updates
+  const handleQuickEdit = async (backlink: BacklinkWithDetails) => {
+    const newStatus = prompt(
+      `Update status for ${backlink.resource.domain}:\n\nCurrent: ${backlink.status}\n\nEnter new status (pending, placed, live, rejected):`,
+      backlink.status
+    );
+    
+    if (newStatus && newStatus !== backlink.status) {
+      const validStatuses = ['pending', 'placed', 'live', 'rejected'];
+      if (validStatuses.includes(newStatus)) {
+        onBacklinkUpdate(backlink.id, { status: newStatus as BacklinkStatus });
+      } else {
+        alert('Invalid status. Please use: pending, placed, live, or rejected');
       }
-    }));
-  };
-
-  const cancelEditing = (id: number) => {
-    setEditingRows(prev => {
-      const newState = { ...prev };
-      delete newState[id];
-      return newState;
-    });
-  };
-
-  const saveEditing = async (id: number) => {
-    const edits = editingRows[id];
-    if (!edits) return;
-
-    const backlink = filteredBacklinks.find(b => b.id === id);
-    if (!backlink) return;
-
-    try {
-      // Handle domain authority update (resource-level)
-      if (edits.domain_authority !== undefined && edits.domain_authority !== backlink.resource.domain_authority) {
-        const response = await fetch(`/api/resources/${backlink.resource.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            domain_authority: edits.domain_authority,
-          }),
-        });
-
-        const result = await response.json();
-        if (!result.success) {
-          alert(`Failed to update domain authority: ${result.message}`);
-          return;
-        }
-      }
-
-      // Handle backlink-level updates (status, etc.)
-      const backlinkUpdates: Partial<BacklinkWithDetails> = {};
-      if (edits.status !== undefined && edits.status !== backlink.status) {
-        backlinkUpdates.status = edits.status;
-      }
-
-      if (Object.keys(backlinkUpdates).length > 0) {
-        onBacklinkUpdate(id, backlinkUpdates);
-      }
-
-      // Cancel editing mode
-      cancelEditing(id);
-
-      // Refresh the page to show updated DA across all backlinks
-      if (edits.domain_authority !== undefined && edits.domain_authority !== backlink.resource.domain_authority) {
-        window.location.reload();
-      }
-    } catch (error) {
-      console.error('Error saving changes:', error);
-      alert('Failed to save changes. Please try again.');
     }
   };
 
-  const updateEditing = (id: number, value: BacklinkStatus) => {
-    setEditingRows(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        status: value
-      }
-    }));
-  };
-
-  const updateEditingDA = (id: number, value: number) => {
-    setEditingRows(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        domain_authority: value
-      }
-    }));
-  };
 
   // Quick selection functions - focus on non-placed backlinks
   const getNonPlacedBacklinks = () => {
@@ -642,12 +564,11 @@ export function ResourceTable({
               <TableHead>Status</TableHead>
               <TableHead>DA</TableHead>
               <TableHead>Backlink Actions</TableHead>
-              <TableHead>Status Actions</TableHead>
+              <TableHead>Price</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredBacklinks.map((backlink) => {
-              const isEditing = editingRows[backlink.id];
               return (
                 <TableRow key={backlink.id}>
                   <TableCell>
@@ -667,42 +588,13 @@ export function ResourceTable({
                   </TableCell>
                   
                   <TableCell>
-                    {isEditing ? (
-                      <Select
-                        value={isEditing.status}
-                        onValueChange={(value) => updateEditing(backlink.id, value as BacklinkStatus)}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="placed">Placed</SelectItem>
-                          <SelectItem value="live">Live</SelectItem>
-                          <SelectItem value="rejected">Rejected</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <StatusBadge status={backlink.status} />
-                    )}
+                    <StatusBadge status={backlink.status} />
                   </TableCell>
                   
                   <TableCell>
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={isEditing.domain_authority || 0}
-                        onChange={(e) => updateEditingDA(backlink.id, parseInt(e.target.value) || 0)}
-                        className="w-16 px-2 py-1 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="DA"
-                      />
-                    ) : (
-                      <Badge variant="outline">
-                        {backlink.resource.domain_authority}
-                      </Badge>
-                    )}
+                    <Badge variant="outline">
+                      {backlink.resource.domain_authority}
+                    </Badge>
                   </TableCell>
                   
                   <TableCell>
@@ -710,9 +602,9 @@ export function ResourceTable({
                       <Button 
                         size="sm" 
                         variant="outline"
-                        onClick={() => startEditing(backlink)}
+                        onClick={() => handleQuickEdit(backlink)}
                         className="text-xs"
-                        title="Edit backlink"
+                        title="Edit status"
                       >
                         <Edit2 className="h-3 w-3" />
                       </Button>
@@ -729,28 +621,17 @@ export function ResourceTable({
                   </TableCell>
                   
                   <TableCell>
-                    {isEditing ? (
-                      <div className="flex gap-1">
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => saveEditing(backlink.id)}
-                          title="Save status changes"
-                        >
-                          <Save className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="ghost"
-                          onClick={() => cancelEditing(backlink.id)}
-                          title="Cancel status changes"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-xs">-</span>
-                    )}
+                    <div className="text-sm">
+                      {backlink.resource.cost > 0 ? (
+                        <Badge variant="secondary" className="bg-green-50 text-green-700 border-green-200">
+                          ${backlink.resource.cost.toFixed(0)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-500">
+                          Free
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );

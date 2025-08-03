@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllWebsiteInfo, saveWebsiteInfo } from '@/lib/website-info';
+import { getAllWebsiteInfo, saveWebsiteInfo } from '@/lib/website-info-db';
 import { WebsiteExtendedInfo } from '@/types';
 
 // GET - Get all website extended info
 export async function GET() {
   try {
-    const websiteInfo = getAllWebsiteInfo();
+    const websiteInfo = await getAllWebsiteInfo();
     
     return NextResponse.json({
       success: true,
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       url: body.url || undefined
     };
 
-    const success = saveWebsiteInfo(websiteInfo);
+    const success = await saveWebsiteInfo(websiteInfo);
 
     if (success) {
       return NextResponse.json({

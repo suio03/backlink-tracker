@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getWebsiteInfo, saveWebsiteInfo, deleteWebsiteInfo } from '@/lib/website-info';
+import { getWebsiteInfo, saveWebsiteInfo, deleteWebsiteInfo } from '@/lib/website-info-db';
 import { WebsiteExtendedInfo } from '@/types';
 
 interface RouteParams {
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const websiteInfo = getWebsiteInfo(websiteId);
+    const websiteInfo = await getWebsiteInfo(websiteId);
     
     return NextResponse.json({
       success: true,
@@ -68,7 +68,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       url: body.url || undefined
     };
 
-    const success = saveWebsiteInfo(websiteInfo);
+    const success = await saveWebsiteInfo(websiteInfo);
 
     if (success) {
       return NextResponse.json({
@@ -112,7 +112,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const success = deleteWebsiteInfo(websiteId);
+    const success = await deleteWebsiteInfo(websiteId);
 
     if (success) {
       return NextResponse.json({

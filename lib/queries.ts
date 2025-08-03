@@ -101,6 +101,7 @@ export async function getBacklinksByWebsiteId(websiteId: number): Promise<Backli
       r.domain_authority,
       r.category as resource_category,
       r.contact_email,
+      r.cost,
       r.notes as resource_notes,
       w.domain as website_domain,
       w.name as website_name

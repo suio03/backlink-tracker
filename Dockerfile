@@ -30,6 +30,9 @@ ENV NODE_ENV production
 RUN rm -rf .next
 RUN npm run build
 
+# Remove pg-cloudflare to force standard TCP connections (prevents misdetection as Edge runtime)
+RUN rm -rf .next/standalone/node_modules/pg-cloudflare
+
 # Stage 3: Runner (Production)
 FROM node:20-alpine AS runner
 WORKDIR /app

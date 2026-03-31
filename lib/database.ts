@@ -33,8 +33,10 @@ export function getDatabase(): Pool {
       // Use connection string
       config.connectionString = databaseUrl;
       
-      // SSL configuration for Supabase
-      if (process.env.NODE_ENV === 'production' || databaseUrl.includes('supabase.co')) {
+      // SSL configuration
+      if (databaseUrl.includes('sslmode=disable')) {
+        config.ssl = false;
+      } else if (process.env.NODE_ENV === 'production' || databaseUrl.includes('supabase.co')) {
         config.ssl = { rejectUnauthorized: false };
       } else {
         config.ssl = false; // Local development

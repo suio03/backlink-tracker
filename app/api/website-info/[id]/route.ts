@@ -64,6 +64,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       websiteId,
       supportEmail: body.supportEmail || undefined,
       title: body.title || undefined,
+      shortDescription: body.shortDescription || undefined,
       description: body.description || undefined,
       url: body.url || undefined
     };

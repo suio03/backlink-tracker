@@ -5,6 +5,7 @@ export interface WebsiteExtendedInfo {
   websiteId: number;
   supportEmail?: string;
   title?: string;
+  shortDescription?: string;
   description?: string;
   url?: string;
   lastUpdated: string;

@@ -10,23 +10,25 @@ import { WebsiteExtendedInfo } from '@/types';
 export async function getAllWebsiteInfo(): Promise<WebsiteExtendedInfo[]> {
   try {
     const sql = `
-      SELECT 
+      SELECT
         website_id,
         support_email,
         title,
+        short_description,
         description,
         url,
         updated_at as last_updated
       FROM website_extended_info
       ORDER BY website_id;
     `;
-    
+
     const result = await query(sql);
-    
+
     return result.rows.map(row => ({
       websiteId: row.website_id,
       supportEmail: row.support_email || undefined,
       title: row.title || undefined,
+      shortDescription: row.short_description || undefined,
       description: row.description || undefined,
       url: row.url || undefined,
       lastUpdated: row.last_updated
@@ -41,28 +43,30 @@ export async function getAllWebsiteInfo(): Promise<WebsiteExtendedInfo[]> {
 export async function getWebsiteInfo(websiteId: number): Promise<WebsiteExtendedInfo | null> {
   try {
     const sql = `
-      SELECT 
+      SELECT
         website_id,
         support_email,
         title,
+        short_description,
         description,
         url,
         updated_at as last_updated
       FROM website_extended_info
       WHERE website_id = $1;
     `;
-    
+
     const result = await query(sql, [websiteId]);
-    
+
     if (result.rows.length === 0) {
       return null;
     }
-    
+
     const row = result.rows[0];
     return {
       websiteId: row.website_id,
       supportEmail: row.support_email || undefined,
       title: row.title || undefined,
+      shortDescription: row.short_description || undefined,
       description: row.description || undefined,
       url: row.url || undefined,
       lastUpdated: row.last_updated
@@ -77,21 +81,23 @@ export async function getWebsiteInfo(websiteId: number): Promise<WebsiteExtended
 export async function saveWebsiteInfo(websiteInfo: Omit<WebsiteExtendedInfo, 'lastUpdated'>): Promise<boolean> {
   try {
     const sql = `
-      INSERT INTO website_extended_info (website_id, support_email, title, description, url, updated_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      INSERT INTO website_extended_info (website_id, support_email, title, short_description, description, url, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT (website_id) DO UPDATE SET
         support_email = EXCLUDED.support_email,
         title = EXCLUDED.title,
+        short_description = EXCLUDED.short_description,
         description = EXCLUDED.description,
         url = EXCLUDED.url,
         updated_at = EXCLUDED.updated_at
       RETURNING website_id;
     `;
-    
+
     const result = await query(sql, [
       websiteInfo.websiteId,
       websiteInfo.supportEmail || null,
       websiteInfo.title || null,
+      websiteInfo.shortDescription || null,
       websiteInfo.description || null,
       websiteInfo.url || null
     ]);
@@ -128,20 +134,22 @@ export async function bulkSaveWebsiteInfo(websiteInfoList: Omit<WebsiteExtendedI
     
     for (const websiteInfo of websiteInfoList) {
       const sql = `
-        INSERT INTO website_extended_info (website_id, support_email, title, description, url, updated_at)
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        INSERT INTO website_extended_info (website_id, support_email, title, short_description, description, url, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
         ON CONFLICT (website_id) DO UPDATE SET
           support_email = EXCLUDED.support_email,
           title = EXCLUDED.title,
+          short_description = EXCLUDED.short_description,
           description = EXCLUDED.description,
           url = EXCLUDED.url,
           updated_at = EXCLUDED.updated_at;
       `;
-      
+
       await query(sql, [
         websiteInfo.websiteId,
         websiteInfo.supportEmail || null,
         websiteInfo.title || null,
+        websiteInfo.shortDescription || null,
         websiteInfo.description || null,
         websiteInfo.url || null
       ]);

@@ -21,6 +21,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
   const [formData, setFormData] = useState({
     supportEmail: '',
     title: '',
+    shortDescription: '',
     description: '',
     url: ''
   });
@@ -38,6 +39,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
           setFormData({
             supportEmail: result.data.supportEmail || '',
             title: result.data.title || '',
+            shortDescription: result.data.shortDescription || '',
             description: result.data.description || '',
             url: result.data.url || ''
           });
@@ -122,6 +124,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
         setFormData({
           supportEmail: '',
           title: '',
+          shortDescription: '',
           description: '',
           url: ''
         });
@@ -141,6 +144,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
       setFormData({
         supportEmail: websiteInfo.supportEmail || '',
         title: websiteInfo.title || '',
+        shortDescription: websiteInfo.shortDescription || '',
         description: websiteInfo.description || '',
         url: websiteInfo.url || ''
       });
@@ -150,6 +154,7 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
       setFormData({
         supportEmail: '',
         title: '',
+        shortDescription: '',
         description: '',
         url: ''
       });
@@ -279,6 +284,40 @@ export function WebsiteInfoForm({ websiteId, websiteName }: WebsiteInfoFormProps
                   title="Copy title"
                 >
                   {copiedField === 'title' ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Short Description */}
+        <div>
+          <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
+            <FileText className="h-4 w-4" />
+            Short Description
+          </label>
+          {isEditing ? (
+            <Input
+              value={formData.shortDescription}
+              onChange={(e) => handleInputChange('shortDescription', e.target.value)}
+              placeholder="One-line summary of the website"
+            />
+          ) : (
+            <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+              <span className="text-sm text-gray-600">
+                {websiteInfo?.shortDescription || 'Not specified'}
+              </span>
+              {websiteInfo?.shortDescription && (
+                <button
+                  onClick={() => handleCopy(websiteInfo.shortDescription!, 'shortDescription')}
+                  className="ml-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  title="Copy short description"
+                >
+                  {copiedField === 'shortDescription' ? (
                     <Check className="h-4 w-4 text-green-600" />
                   ) : (
                     <Copy className="h-4 w-4" />

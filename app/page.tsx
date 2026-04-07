@@ -68,12 +68,6 @@ export default function Home() {
   // Quick reference data
   const quickReferenceData = [
     {
-      id: 'tango',
-      url: 'https://tangogameunlimited.app/',
-      name: 'tango game unlimited',
-      email: 'tangogame@support.app'
-    },
-    {
       id: 'zip',
       url: 'https://zipgame.net/',
       name: 'zip game',

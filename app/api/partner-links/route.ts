@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     }
 
     const result = await query(
-      `SELECT id, label, url, type, image_src, image_width, image_height FROM partner_links
+      `SELECT id, label, url, type, image_src, image_width, image_height, image_alt FROM partner_links
        WHERE site = $1 AND is_active = true
        ORDER BY sort_order ASC, created_at ASC`,
       [site]
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { site, label, url, sort_order = 0, type = 'link', image_src, image_width, image_height } = body;
+    const { site, label, url, sort_order = 0, type = 'link', image_src, image_width, image_height, image_alt } = body;
 
     if (!site || !label || !url) {
       return NextResponse.json(
@@ -58,10 +58,10 @@ export async function POST(request: Request) {
     }
 
     const result = await query(
-      `INSERT INTO partner_links (site, label, url, sort_order, type, image_src, image_width, image_height)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO partner_links (site, label, url, sort_order, type, image_src, image_width, image_height, image_alt)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [site, label, url, sort_order, type, image_src || null, image_width || null, image_height || null]
+      [site, label, url, sort_order, type, image_src || null, image_width || null, image_height || null, image_alt || null]
     );
 
     return NextResponse.json(result.rows[0], { status: 201 });

@@ -2,6 +2,21 @@
 
 A comprehensive backlink management system to track and manage backlinks across multiple websites. Built for SEO professionals who need to efficiently manage backlink opportunities across their website portfolio.
 
+## Backlink Desk extension API
+
+The Chrome extension uses `GET/PATCH /api/extension/workspace` to read and update
+the existing PostgreSQL websites, resources, backlinks, and website information.
+Discovery prospects are stored in the separate `extension_prospects` table; the
+`partner_links` table is never read or modified by this endpoint.
+
+Set a long random `BACKLINK_EXTENSION_TOKEN` in the deployment environment. The
+extension sends it as a Bearer token. The prospects table is created on the first
+authenticated request, or it can be created ahead of time with:
+
+```bash
+psql "$DATABASE_URL" -f migrations/add-extension-prospects.sql
+```
+
 ## 🚀 Features
 
 - **Multi-Website Management**: Manage backlinks for 10+ websites from a single dashboard

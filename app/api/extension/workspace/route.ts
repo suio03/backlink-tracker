@@ -2,7 +2,10 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import {
   applyExtensionWorkspacePatch,
+  importExtensionProspectReport,
   loadExtensionWorkspace,
+  ProspectReportInputError,
+  type ProspectReportPayload,
   type WorkspacePatch,
 } from '@/lib/extension-workspace';
 
@@ -11,7 +14,7 @@ export const runtime = 'nodejs';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-  'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, PATCH, POST, OPTIONS',
   'Cache-Control': 'no-store',
 };
 
@@ -86,6 +89,27 @@ export async function PATCH(request: Request) {
             : 'Failed to update workspace',
       },
       code === '23505' ? 409 : 500,
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  const rejection = authorize(request);
+  if (rejection) return rejection;
+  try {
+    const payload = (await request.json()) as ProspectReportPayload;
+    return json({
+      success: true,
+      data: await importExtensionProspectReport(payload),
+    });
+  } catch (error: unknown) {
+    console.error('Failed to import Semrush prospect report:', error);
+    if (error instanceof ProspectReportInputError) {
+      return json({ success: false, message: error.message }, 400);
+    }
+    return json(
+      { success: false, message: 'Failed to import prospect report' },
+      500,
     );
   }
 }

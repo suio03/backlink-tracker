@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0] - 2026-09-01
+### Added
+- Source-aware Semrush prospect imports with per-domain source counts and last-seen timestamps.
+- Transactional batch ingestion that normalizes domains and preserves the highest authority score.
+
+### Changed
+- The authenticated extension workspace endpoint now accepts direct Semrush report synchronization without intermediate CSV downloads.
+
+### Fixed
+- Reprocessing the same source website no longer inflates a prospect's occurrence count.
+
+## [0.4.0] - 2026-08-20
+### Added
+- Database-backed multi-step form workflow templates for the Backlink Desk extension.
+
+### Changed
+- The extension workspace API now loads and patches learned workflows together with websites, resources, and submissions.
+
+### Fixed
+- Removing a backlink resource also removes only its learned form workflow through a scoped database cascade.
+
 ## [0.3.0] - 2026-08-20
 ### Added
 - A token-protected extension workspace API backed by the existing PostgreSQL websites, resources, backlinks, and website information.

@@ -8,7 +8,20 @@ export interface WorkspacePatch {
   websites?: { upsert?: JsonRecord[]; remove?: string[] };
   resources?: { upsert?: JsonRecord[]; remove?: string[] };
   submissions?: { upsert?: JsonRecord[]; remove?: string[] };
+  workflows?: { upsert?: JsonRecord[]; remove?: string[] };
   queue?: string[];
+}
+
+export interface ProspectReportPayload {
+  sourceDomain?: unknown;
+  records?: unknown;
+}
+
+export class ProspectReportInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProspectReportInputError';
+  }
 }
 
 const VALID_PROSPECT_STATUSES = new Set([
@@ -49,6 +62,59 @@ function nullableDate(value: unknown): string | null {
   return candidate || null;
 }
 
+function normalizeDomain(value: unknown): string {
+  const candidate = text(value);
+  if (!candidate) return '';
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(candidate)
+        ? candidate
+        : `https://${candidate}`,
+    );
+    return ['http:', 'https:'].includes(url.protocol)
+      ? url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '')
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeProspectReport(payload: ProspectReportPayload) {
+  const sourceDomain = normalizeDomain(payload?.sourceDomain);
+  if (!sourceDomain) {
+    throw new ProspectReportInputError('A valid source domain is required');
+  }
+  if (!Array.isArray(payload?.records)) {
+    throw new ProspectReportInputError('Report records are required');
+  }
+  if (payload.records.length > 100_000) {
+    throw new ProspectReportInputError('Report exceeds the 100,000 row limit');
+  }
+
+  const byDomain = new Map<string, { rootDomain: string; authority: number | null }>();
+  for (const value of payload.records) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonRecord;
+    const rootDomain = normalizeDomain(record.domain ?? record.rootDomain);
+    if (!rootDomain) continue;
+    const authority = nullableNumber(record.as ?? record.authority);
+    const existing = byDomain.get(rootDomain);
+    if (!existing) {
+      byDomain.set(rootDomain, { rootDomain, authority });
+    } else if (
+      authority !== null &&
+      (existing.authority === null || authority > existing.authority)
+    ) {
+      existing.authority = authority;
+    }
+  }
+  const normalized = [...byDomain.values()];
+  if (!normalized.length) {
+    throw new ProspectReportInputError('Report contains no valid domains');
+  }
+  return { sourceDomain, records: normalized };
+}
+
 function boolean(value: unknown, fallback = true): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
@@ -79,6 +145,7 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
         root_domain       TEXT PRIMARY KEY,
         authority         INTEGER,
         csv_file_count    INTEGER,
+        source_count      INTEGER NOT NULL DEFAULT 0,
         source_files      TEXT,
         status            TEXT NOT NULL DEFAULT 'pending',
         submission_url    TEXT,
@@ -88,6 +155,7 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
         excluded_reason   TEXT,
         last_opened_at    TIMESTAMPTZ,
         last_imported_at  TIMESTAMPTZ,
+        last_seen_at      TIMESTAMPTZ,
         import_order      INTEGER NOT NULL DEFAULT 0,
         queue_position    INTEGER,
         created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -97,6 +165,33 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
         ON extension_prospects (status);
       CREATE INDEX IF NOT EXISTS idx_extension_prospects_queue
         ON extension_prospects (queue_position);
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS source_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+      CREATE TABLE IF NOT EXISTS extension_prospect_sources (
+        root_domain       TEXT NOT NULL REFERENCES extension_prospects(root_domain) ON DELETE CASCADE,
+        source_domain     TEXT NOT NULL,
+        authority         INTEGER,
+        first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (root_domain, source_domain)
+      );
+      CREATE INDEX IF NOT EXISTS idx_extension_prospect_sources_source
+        ON extension_prospect_sources (source_domain);
+      CREATE TABLE IF NOT EXISTS extension_form_workflows (
+        workflow_id       TEXT PRIMARY KEY,
+        resource_id       BIGINT NOT NULL UNIQUE REFERENCES resources(id) ON DELETE CASCADE,
+        domain            TEXT NOT NULL,
+        name              TEXT NOT NULL DEFAULT 'Submission workflow',
+        status            TEXT NOT NULL DEFAULT 'learning',
+        version           INTEGER NOT NULL DEFAULT 1,
+        steps             JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_extension_form_workflows_resource
+        ON extension_form_workflows (resource_id);
       ALTER TABLE website_extended_info
         ADD COLUMN IF NOT EXISTS short_description TEXT;
     `).then(() => undefined).catch((error) => {
@@ -110,7 +205,7 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
 async function loadWithClient(client: PoolClient | null = null) {
   const run = (sql: string, params?: unknown[]) =>
     client ? client.query(sql, params) : query(sql, params);
-  const [websites, resources, submissions, prospects] = await Promise.all([
+  const [websites, resources, submissions, prospects, workflows] = await Promise.all([
     run(`
       SELECT
         w.*,
@@ -126,6 +221,7 @@ async function loadWithClient(client: PoolClient | null = null) {
     run('SELECT * FROM resources ORDER BY id'),
     run('SELECT * FROM backlinks ORDER BY id'),
     run('SELECT * FROM extension_prospects ORDER BY import_order, root_domain'),
+    run('SELECT * FROM extension_form_workflows ORDER BY resource_id'),
   ]);
 
   const queue = prospects.rows
@@ -143,6 +239,7 @@ async function loadWithClient(client: PoolClient | null = null) {
       rootDomain: row.root_domain,
       as: row.authority,
       csvFileCount: row.csv_file_count,
+      sourceCount: Number(row.source_count) || 0,
       sourceFiles: row.source_files || '',
       status: row.status,
       submissionUrl: row.submission_url || '',
@@ -152,6 +249,7 @@ async function loadWithClient(client: PoolClient | null = null) {
       excludedReason: row.excluded_reason || '',
       lastOpenedAt: row.last_opened_at || '',
       lastImportedAt: row.last_imported_at || '',
+      lastSeenAt: row.last_seen_at || '',
       importOrder: row.import_order,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -198,12 +296,133 @@ async function loadWithClient(client: PoolClient | null = null) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })),
+    workflows: workflows.rows.map((row) => ({
+      id: row.workflow_id,
+      resourceId: String(row.resource_id),
+      domain: row.domain,
+      name: row.name,
+      status: row.status,
+      version: Number(row.version) || 1,
+      steps: Array.isArray(row.steps) ? row.steps : [],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
   };
 }
 
 export async function loadExtensionWorkspace() {
   await ensureExtensionWorkspaceSchema();
   return loadWithClient();
+}
+
+export async function importExtensionProspectReport(
+  payload: ProspectReportPayload,
+) {
+  await ensureExtensionWorkspaceSchema();
+  const report = normalizeProspectReport(payload);
+  const rootDomains = report.records.map((record) => record.rootDomain);
+
+  return transaction(async (client) => {
+    const existing = await client.query(
+      'SELECT root_domain FROM extension_prospects WHERE root_domain = ANY($1::text[])',
+      [rootDomains],
+    );
+    const existingDomains = new Set(
+      existing.rows.map((row) => String(row.root_domain)),
+    );
+    const serialized = JSON.stringify(
+      report.records.map((record) => ({
+        root_domain: record.rootDomain,
+        authority: record.authority,
+      })),
+    );
+
+    await client.query(
+      `
+        WITH incoming AS (
+          SELECT
+            row.root_domain,
+            row.authority,
+            (ROW_NUMBER() OVER (ORDER BY row.root_domain) - 1)::INTEGER AS order_offset
+          FROM jsonb_to_recordset($1::jsonb)
+            AS row(root_domain TEXT, authority INTEGER)
+        ),
+        base_order AS (
+          SELECT COALESCE(MAX(import_order), -1) + 1 AS next_order
+          FROM extension_prospects
+        ),
+        upserted AS (
+          INSERT INTO extension_prospects (
+            root_domain, authority, source_count, status, last_imported_at,
+            last_seen_at, import_order, created_at, updated_at
+          )
+          SELECT
+            incoming.root_domain,
+            incoming.authority,
+            0,
+            'pending',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP,
+            base_order.next_order + incoming.order_offset,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+          FROM incoming
+          CROSS JOIN base_order
+          ON CONFLICT (root_domain) DO UPDATE SET
+            authority = CASE
+              WHEN extension_prospects.authority IS NULL THEN EXCLUDED.authority
+              WHEN EXCLUDED.authority IS NULL THEN extension_prospects.authority
+              ELSE GREATEST(extension_prospects.authority, EXCLUDED.authority)
+            END,
+            last_imported_at = CURRENT_TIMESTAMP,
+            last_seen_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING root_domain
+        )
+        INSERT INTO extension_prospect_sources (
+          root_domain, source_domain, authority, first_seen_at, last_seen_at
+        )
+        SELECT upserted.root_domain, $2, incoming.authority,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM upserted
+        JOIN incoming USING (root_domain)
+        ON CONFLICT (root_domain, source_domain) DO UPDATE SET
+          authority = CASE
+            WHEN extension_prospect_sources.authority IS NULL THEN EXCLUDED.authority
+            WHEN EXCLUDED.authority IS NULL THEN extension_prospect_sources.authority
+            ELSE GREATEST(extension_prospect_sources.authority, EXCLUDED.authority)
+          END,
+          last_seen_at = CURRENT_TIMESTAMP
+      `,
+      [serialized, report.sourceDomain],
+    );
+
+    await client.query(
+      `
+        UPDATE extension_prospects AS prospect
+        SET source_count = source.source_count,
+            updated_at = CURRENT_TIMESTAMP
+        FROM (
+          SELECT root_domain, COUNT(*)::INTEGER AS source_count
+          FROM extension_prospect_sources
+          WHERE root_domain = ANY($1::text[])
+          GROUP BY root_domain
+        ) AS source
+        WHERE prospect.root_domain = source.root_domain
+      `,
+      [rootDomains],
+    );
+
+    return {
+      workspace: await loadWithClient(client),
+      summary: {
+        sourceDomain: report.sourceDomain,
+        added: report.records.length - existingDomains.size,
+        existing: existingDomains.size,
+        total: report.records.length,
+      },
+    };
+  });
 }
 
 async function upsertProspects(client: PoolClient, values: JsonRecord[]) {
@@ -453,6 +672,53 @@ async function upsertSubmission(
   }
 }
 
+async function upsertWorkflow(
+  client: PoolClient,
+  workflow: JsonRecord,
+  resourceIds: Map<string, number>,
+) {
+  const workflowId = text(workflow.id).slice(0, 200);
+  const sourceResourceId = text(workflow.resourceId);
+  const resourceId =
+    resourceIds.get(sourceResourceId) || numericId(sourceResourceId);
+  if (!workflowId || !resourceId) return;
+  const steps = Array.isArray(workflow.steps) ? workflow.steps.slice(0, 30) : [];
+  const serializedSteps = JSON.stringify(steps);
+  if (serializedSteps.length > 500_000) {
+    throw new Error('Workflow template is too large');
+  }
+  const requestedStatus = text(workflow.status);
+  const status = ['learning', 'ready', 'needs_relearn'].includes(requestedStatus)
+    ? requestedStatus
+    : 'learning';
+  await client.query(
+    `INSERT INTO extension_form_workflows (
+       workflow_id, resource_id, domain, name, status, version, steps,
+       created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7::jsonb,
+       COALESCE($8::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
+     ) ON CONFLICT (resource_id) DO UPDATE SET
+       workflow_id = EXCLUDED.workflow_id,
+       domain = EXCLUDED.domain,
+       name = EXCLUDED.name,
+       status = EXCLUDED.status,
+       version = EXCLUDED.version,
+       steps = EXCLUDED.steps,
+       updated_at = CURRENT_TIMESTAMP`,
+    [
+      workflowId,
+      resourceId,
+      text(workflow.domain),
+      text(workflow.name) || 'Submission workflow',
+      status,
+      Math.max(1, Math.trunc(number(workflow.version, 1))),
+      serializedSteps,
+      nullableDate(workflow.createdAt),
+    ],
+  );
+}
+
 export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
   await ensureExtensionWorkspaceSchema();
   return transaction(async (client) => {
@@ -460,6 +726,7 @@ export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
     const websites = rawPatch.websites || {};
     const resources = rawPatch.resources || {};
     const submissions = rawPatch.submissions || {};
+    const workflows = rawPatch.workflows || {};
 
     const prospectRemovals = strings(prospects.remove);
     if (prospectRemovals.length) {
@@ -469,6 +736,14 @@ export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
       );
     }
     await upsertProspects(client, records(prospects.upsert));
+
+    const workflowRemovals = strings(workflows.remove);
+    if (workflowRemovals.length) {
+      await client.query(
+        'DELETE FROM extension_form_workflows WHERE workflow_id = ANY($1::text[])',
+        [workflowRemovals],
+      );
+    }
 
     const submissionRemovals = strings(submissions.remove)
       .map(numericId)
@@ -507,6 +782,9 @@ export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
     }
     for (const submission of records(submissions.upsert)) {
       await upsertSubmission(client, submission, websiteIds, resourceIds);
+    }
+    for (const workflow of records(workflows.upsert)) {
+      await upsertWorkflow(client, workflow, resourceIds);
     }
 
     if (Array.isArray(rawPatch.queue)) {

@@ -6,8 +6,12 @@ A comprehensive backlink management system to track and manage backlinks across 
 
 The Chrome extension uses `GET/PATCH /api/extension/workspace` to read and update
 the existing PostgreSQL websites, resources, backlinks, and website information.
-Discovery prospects are stored in the separate `extension_prospects` table; the
-`partner_links` table is never read or modified by this endpoint.
+Discovery prospects are stored in the separate `extension_prospects` table.
+Semrush report membership is stored in `extension_prospect_sources`, keyed by
+prospect domain and source website so repeated imports do not inflate counts.
+Learned multi-step form templates are stored in `extension_form_workflows` and
+are deleted with their associated resource. The `partner_links` table is never
+read or modified by this endpoint.
 
 Set a long random `BACKLINK_EXTENSION_TOKEN` in the deployment environment. The
 extension sends it as a Bearer token. The prospects table is created on the first
@@ -15,6 +19,8 @@ authenticated request, or it can be created ahead of time with:
 
 ```bash
 psql "$DATABASE_URL" -f migrations/add-extension-prospects.sql
+psql "$DATABASE_URL" -f migrations/add-extension-prospect-sources.sql
+psql "$DATABASE_URL" -f migrations/add-extension-form-workflows.sql
 ```
 
 ## 🚀 Features

@@ -53,8 +53,8 @@ start_dev() {
     print_status "Application will be available at: http://localhost:3001"
     print_status "Database is available at: localhost:5432"
     print_status ""
-    print_status "Use 'npm run docker:dev:logs' to view logs"
-    print_status "Use 'npm run docker:dev:stop' to stop the environment"
+    print_status "Use './docker-dev.sh logs' to view logs"
+    print_status "Use './docker-dev.sh stop' to stop the environment"
 }
 
 # Function to stop development environment
@@ -138,4 +138,4 @@ case "${1:-start}" in
         show_help
         exit 1
         ;;
-esac 
+esac

@@ -37,6 +37,9 @@ NEXT_TELEMETRY_DISABLED=1
 # Security Configuration (generate secure keys!)
 NEXTAUTH_SECRET=your_32_character_secret_key_here
 NEXTAUTH_URL=https://your-domain.com
+BACKLINK_EXTENSION_TOKEN=replace_with_a_long_random_token
+OPENAI_API_KEY=replace_with_your_backend_only_openai_key
+OPENAI_CONTENT_MODEL=gpt-5-nano
 ```
 
 ### 2. Generate Secure Keys
@@ -112,6 +115,15 @@ The database will be automatically initialized with:
 - Auto-linking functionality enabled
 
 ### Manual Database Operations
+
+Before deploying extension submission tracking and generated content, apply the
+idempotent migration once (authenticated extension requests also ensure the
+same schema defensively):
+
+```bash
+docker exec -i backlink-postgres psql -U backlink_user -d backlink_tracker \
+  < migrations/add-extension-submission-tracking.sql
+```
 
 If you need to run manual database operations:
 
@@ -265,4 +277,4 @@ If you encounter issues:
 3. Test database connectivity
 4. Review Dokploy deployment logs
 
-The application includes comprehensive error handling and logging to help diagnose issues quickly. 
+The application includes comprehensive error handling and logging to help diagnose issues quickly.

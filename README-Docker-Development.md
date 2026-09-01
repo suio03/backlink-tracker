@@ -6,7 +6,7 @@ This document explains how to set up and use the Docker development environment 
 
 ### 1. Start the Development Environment
 ```bash
-npm run docker:dev
+./docker-dev.sh start
 ```
 This will:
 - Build the development Docker images
@@ -16,12 +16,12 @@ This will:
 
 ### 2. View Logs
 ```bash
-npm run docker:dev:logs
+./docker-dev.sh logs
 ```
 
 ### 3. Stop the Environment
 ```bash
-npm run docker:dev:stop
+./docker-dev.sh stop
 ```
 
 ## 📁 Files Created
@@ -64,29 +64,29 @@ volumes:
 
 ## 🛠️ Available Commands
 
-### NPM Scripts
+### Helper commands
 ```bash
 # Start development environment
-npm run docker:dev
+./docker-dev.sh start
 
 # Stop development environment
-npm run docker:dev:stop
+./docker-dev.sh stop
 
 # View logs
-npm run docker:dev:logs
+./docker-dev.sh logs
 
 # Restart environment
-npm run docker:dev:restart
+./docker-dev.sh restart
 
 # Check status
-npm run docker:dev:status
+./docker-dev.sh status
 
 # Access container shell
-npm run docker:dev:shell
+./docker-dev.sh shell
 
 # Production commands (for comparison)
-npm run docker:prod
-npm run docker:prod:stop
+docker compose -f docker-compose.yml up --build -d
+docker compose -f docker-compose.yml down
 ```
 
 ### Direct Script Usage
@@ -120,6 +120,9 @@ WATCHPACK_POLLING=true
 
 # Database Connection
 DATABASE_URL=postgresql://backlink_user:dev_password_123@postgres:5432/backlink_tracker?sslmode=disable
+BACKLINK_EXTENSION_TOKEN=replace_with_a_local_test_token
+OPENAI_API_KEY=replace_with_a_backend_only_test_key
+OPENAI_CONTENT_MODEL=gpt-5-nano
 ```
 
 ## 🐛 troubleshooting
@@ -139,14 +142,14 @@ DATABASE_URL=postgresql://backlink_user:dev_password_123@postgres:5432/backlink_
 
 3. **Check logs**: Look for file watcher errors
    ```bash
-   npm run docker:dev:logs
+   ./docker-dev.sh logs
    ```
 
 ### Database Issues?
 1. **Clear database volume**: Start fresh
    ```bash
    docker volume rm backlink-tracker_postgres_data_dev
-   npm run docker:dev
+   ./docker-dev.sh start
    ```
 
 2. **Check database connection**:
@@ -181,7 +184,7 @@ The development setup is only for local development. For production deployment:
 
 1. **Use production Docker setup**:
    ```bash
-   npm run docker:prod
+   docker compose -f docker-compose.yml up --build -d
    ```
 
 2. **Or deploy to Dokploy/server**:
@@ -193,14 +196,14 @@ The development setup is only for local development. For production deployment:
 
 1. **Start development environment**:
    ```bash
-   npm run docker:dev
+   ./docker-dev.sh start
    ```
 
 2. **Make code changes** - Hot reload automatically updates
 
 3. **View logs if needed**:
    ```bash
-   npm run docker:dev:logs
+   ./docker-dev.sh logs
    ```
 
 4. **Access database directly if needed**:
@@ -210,7 +213,7 @@ The development setup is only for local development. For production deployment:
 
 5. **Stop when done**:
    ```bash
-   npm run docker:dev:stop
+   ./docker-dev.sh stop
    ```
 
 ## 🎯 Benefits
@@ -220,4 +223,4 @@ The development setup is only for local development. For production deployment:
 - **📦 Isolated Environment**: Consistent across all machines
 - **🗄️ Real Database**: PostgreSQL with all real data
 - **🛠️ Easy Management**: Simple npm scripts for all operations
-- **🔧 Debugging**: Easy access to logs and container shell 
+- **🔧 Debugging**: Easy access to logs and container shell

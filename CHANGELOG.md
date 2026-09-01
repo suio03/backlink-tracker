@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0] - 2026-09-01
+### Added
+- Dedicated PostgreSQL screening columns and indexes for extension prospects.
+- A Bearer-protected screening-only batch endpoint that updates existing prospect screening metadata without inserting, deleting, or changing manual fields.
+
+### Changed
+- Extension workspace reads now include normalized screening status, category, confidence, cost, entry URL, evidence, ruleset, and timestamp fields.
+
+### Fixed
+- Screening payloads now validate categories, costs, confidence, public HTTP(S) URLs, evidence size, and timestamps before database writes.
+
 ## [0.5.0] - 2026-09-01
 ### Added
 - Source-aware Semrush prospect imports with per-domain source counts and last-seen timestamps.

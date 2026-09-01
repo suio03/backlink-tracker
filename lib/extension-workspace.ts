@@ -17,6 +17,10 @@ export interface ProspectReportPayload {
   records?: unknown;
 }
 
+export interface ProspectScreeningPayload {
+  results?: unknown;
+}
+
 export class ProspectReportInputError extends Error {
   constructor(message: string) {
     super(message);
@@ -31,6 +35,19 @@ const VALID_PROSPECT_STATUSES = new Set([
   'paid',
   'later',
 ]);
+const VALID_SCREENING_WRITE_STATUSES = new Set([
+  'screened',
+  'needs_review',
+  'fetch_failed',
+]);
+const VALID_SCREENING_CATEGORIES = new Set([
+  'direct_submit',
+  'guest_post',
+  'paid_or_contact',
+  'possible',
+  'no_obvious_opportunity',
+]);
+const VALID_SCREENING_COSTS = new Set(['unknown', 'free', 'paid', 'mixed']);
 const VALID_SUBMISSION_STATUSES = new Set([
   'pending',
   'requested',
@@ -62,6 +79,13 @@ function nullableDate(value: unknown): string | null {
   return candidate || null;
 }
 
+function normalizeScreeningDate(value: unknown): string | null {
+  const candidate = text(value);
+  if (!candidate) return null;
+  const timestamp = Date.parse(candidate);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
 function normalizeDomain(value: unknown): string {
   const candidate = text(value);
   if (!candidate) return '';
@@ -77,6 +101,105 @@ function normalizeDomain(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+function normalizeHttpUrl(value: unknown): string {
+  const candidate = text(value);
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    return ['http:', 'https:'].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+      ? url.toString()
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function normalizeScreeningEvidence(value: unknown): JsonRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).reduce<JsonRecord[]>((normalized, item) => {
+    if (typeof item === 'string') {
+      const evidenceText = text(item).slice(0, 500);
+      if (evidenceText) normalized.push({ text: evidenceText });
+      return normalized;
+    }
+    if (!item || typeof item !== 'object') return normalized;
+    const record = item as JsonRecord;
+    const evidence = {
+      type: text(record.type ?? record.kind).slice(0, 80),
+      ruleId: text(record.ruleId ?? record.rule_id).slice(0, 120),
+      text: text(record.text).slice(0, 500),
+      url: normalizeHttpUrl(record.url),
+    };
+    if (Object.values(evidence).some(Boolean)) normalized.push(evidence);
+    return normalized;
+  }, []);
+}
+
+function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
+  if (!Array.isArray(payload?.results)) {
+    throw new ProspectReportInputError('Screening results are required');
+  }
+  if (payload.results.length > 250) {
+    throw new ProspectReportInputError('Screening batch exceeds 250 results');
+  }
+
+  const byDomain = new Map<string, JsonRecord>();
+  for (const value of payload.results) {
+    if (!value || typeof value !== 'object') continue;
+    const record = value as JsonRecord;
+    const rootDomain = normalizeDomain(record.rootDomain ?? record.root_domain);
+    const screeningStatus = text(
+      record.screeningStatus ?? record.screening_status,
+    );
+    if (!rootDomain || !VALID_SCREENING_WRITE_STATUSES.has(screeningStatus)) {
+      continue;
+    }
+    const requestedCategory = text(
+      record.screeningCategory ?? record.screening_category,
+    );
+    const screeningCategory = VALID_SCREENING_CATEGORIES.has(requestedCategory)
+      ? requestedCategory
+      : null;
+    if (screeningStatus !== 'fetch_failed' && !screeningCategory) continue;
+    const requestedConfidence = nullableNumber(
+      record.screeningConfidence ?? record.screening_confidence,
+    );
+    const screeningConfidence =
+      requestedConfidence === null
+        ? null
+        : Math.max(0, Math.min(100, Math.round(requestedConfidence)));
+    const requestedCost = text(record.screeningCost ?? record.screening_cost);
+    const screeningCost = VALID_SCREENING_COSTS.has(requestedCost)
+      ? requestedCost
+      : 'unknown';
+    byDomain.set(rootDomain, {
+      rootDomain,
+      screeningStatus,
+      screeningCategory,
+      screeningConfidence,
+      screeningCost,
+      screeningEntryUrl: normalizeHttpUrl(
+        record.screeningEntryUrl ?? record.screening_entry_url,
+      ),
+      screeningSummary: text(
+        record.screeningSummary ?? record.screening_summary,
+      ).slice(0, 500),
+      screeningEvidence: normalizeScreeningEvidence(
+        record.screeningEvidence ?? record.screening_evidence,
+      ),
+      screeningRuleset: text(
+        record.screeningRuleset ?? record.screening_ruleset,
+      ).slice(0, 100),
+      screenedAt: normalizeScreeningDate(
+        record.screenedAt ?? record.screened_at,
+      ),
+    });
+  }
+  return [...byDomain.values()];
 }
 
 function normalizeProspectReport(payload: ProspectReportPayload) {
@@ -169,6 +292,28 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
         ADD COLUMN IF NOT EXISTS source_count INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE extension_prospects
         ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_status TEXT NOT NULL DEFAULT 'unscreened';
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_category TEXT;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_confidence INTEGER;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_cost TEXT NOT NULL DEFAULT 'unknown';
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_entry_url TEXT;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_summary TEXT;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_evidence JSONB NOT NULL DEFAULT '[]'::jsonb;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screening_ruleset TEXT;
+      ALTER TABLE extension_prospects
+        ADD COLUMN IF NOT EXISTS screened_at TIMESTAMPTZ;
+      CREATE INDEX IF NOT EXISTS idx_extension_prospects_screening_status
+        ON extension_prospects (screening_status);
+      CREATE INDEX IF NOT EXISTS idx_extension_prospects_screening_category
+        ON extension_prospects (screening_category);
       CREATE TABLE IF NOT EXISTS extension_prospect_sources (
         root_domain       TEXT NOT NULL REFERENCES extension_prospects(root_domain) ON DELETE CASCADE,
         source_domain     TEXT NOT NULL,
@@ -250,6 +395,20 @@ async function loadWithClient(client: PoolClient | null = null) {
       lastOpenedAt: row.last_opened_at || '',
       lastImportedAt: row.last_imported_at || '',
       lastSeenAt: row.last_seen_at || '',
+      screeningStatus: row.screening_status || 'unscreened',
+      screeningCategory: row.screening_category || '',
+      screeningConfidence:
+        row.screening_confidence === null
+          ? null
+          : Number(row.screening_confidence),
+      screeningCost: row.screening_cost || 'unknown',
+      screeningEntryUrl: row.screening_entry_url || '',
+      screeningSummary: row.screening_summary || '',
+      screeningEvidence: Array.isArray(row.screening_evidence)
+        ? row.screening_evidence
+        : [],
+      screeningRuleset: row.screening_ruleset || '',
+      screenedAt: row.screened_at || '',
       importOrder: row.import_order,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -423,6 +582,69 @@ export async function importExtensionProspectReport(
       },
     };
   });
+}
+
+export async function applyProspectScreeningResults(
+  payload: ProspectScreeningPayload,
+) {
+  await ensureExtensionWorkspaceSchema();
+  const results = normalizeProspectScreeningPayload(payload);
+  if (!results.length) {
+    throw new ProspectReportInputError('Screening batch contains no valid results');
+  }
+  const serialized = JSON.stringify(
+    results.map((result) => ({
+      root_domain: result.rootDomain,
+      screening_status: result.screeningStatus,
+      screening_category: result.screeningCategory,
+      screening_confidence: result.screeningConfidence,
+      screening_cost: result.screeningCost,
+      screening_entry_url: result.screeningEntryUrl || null,
+      screening_summary: result.screeningSummary || null,
+      screening_evidence: result.screeningEvidence,
+      screening_ruleset: result.screeningRuleset || null,
+      screened_at: result.screenedAt,
+    })),
+  );
+  const updated = await query(
+    `
+      WITH incoming AS (
+        SELECT *
+        FROM jsonb_to_recordset($1::jsonb) AS row(
+          root_domain TEXT,
+          screening_status TEXT,
+          screening_category TEXT,
+          screening_confidence INTEGER,
+          screening_cost TEXT,
+          screening_entry_url TEXT,
+          screening_summary TEXT,
+          screening_evidence JSONB,
+          screening_ruleset TEXT,
+          screened_at TIMESTAMPTZ
+        )
+      )
+      UPDATE extension_prospects AS prospect
+      SET screening_status = incoming.screening_status,
+          screening_category = incoming.screening_category,
+          screening_confidence = incoming.screening_confidence,
+          screening_cost = incoming.screening_cost,
+          screening_entry_url = incoming.screening_entry_url,
+          screening_summary = incoming.screening_summary,
+          screening_evidence = COALESCE(incoming.screening_evidence, '[]'::jsonb),
+          screening_ruleset = incoming.screening_ruleset,
+          screened_at = COALESCE(incoming.screened_at, CURRENT_TIMESTAMP),
+          updated_at = CURRENT_TIMESTAMP
+      FROM incoming
+      WHERE prospect.root_domain = incoming.root_domain
+      RETURNING prospect.root_domain
+    `,
+    [serialized],
+  );
+  return {
+    received: results.length,
+    updated: updated.rowCount || 0,
+    missing: results.length - (updated.rowCount || 0),
+  };
 }
 
 async function upsertProspects(client: PoolClient, values: JsonRecord[]) {

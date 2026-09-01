@@ -17,10 +17,16 @@ Set a long random `BACKLINK_EXTENSION_TOKEN` in the deployment environment. The
 extension sends it as a Bearer token. The prospects table is created on the first
 authenticated request, or it can be created ahead of time with:
 
+Target-specific submission copy is generated through `POST /api/extension/content`.
+Set `OPENAI_API_KEY` only in the backend deployment environment. The optional
+`OPENAI_CONTENT_MODEL` defaults to `gpt-5-nano`. Generated content is cached by
+website, resource, model, language, profile, and observed form fields.
+
 ```bash
 psql "$DATABASE_URL" -f migrations/add-extension-prospects.sql
 psql "$DATABASE_URL" -f migrations/add-extension-prospect-sources.sql
 psql "$DATABASE_URL" -f migrations/add-extension-form-workflows.sql
+psql "$DATABASE_URL" -f migrations/add-extension-submission-tracking.sql
 ```
 
 ## 🚀 Features

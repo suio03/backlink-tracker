@@ -139,6 +139,23 @@ function normalizeScreeningEvidence(value: unknown): JsonRecord[] {
   }, []);
 }
 
+function normalizeSubmissionHistory(value: unknown): JsonRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-100).reduce<JsonRecord[]>((normalized, item) => {
+    if (!item || typeof item !== 'object') return normalized;
+    const record = item as JsonRecord;
+    const status = text(record.status);
+    if (!VALID_SUBMISSION_STATUSES.has(status)) return normalized;
+    normalized.push({
+      status,
+      at: normalizeScreeningDate(record.at),
+      url: normalizeHttpUrl(record.url),
+      note: text(record.note).slice(0, 500),
+    });
+    return normalized;
+  }, []);
+}
+
 function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
   if (!Array.isArray(payload?.results)) {
     throw new ProspectReportInputError('Screening results are required');
@@ -339,6 +356,32 @@ export async function ensureExtensionWorkspaceSchema(): Promise<void> {
         ON extension_form_workflows (resource_id);
       ALTER TABLE website_extended_info
         ADD COLUMN IF NOT EXISTS short_description TEXT;
+      ALTER TABLE backlinks
+        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
+      ALTER TABLE backlinks
+        ADD COLUMN IF NOT EXISTS submission_url TEXT;
+      ALTER TABLE backlinks
+        ADD COLUMN IF NOT EXISTS live_url TEXT;
+      ALTER TABLE backlinks
+        ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
+      ALTER TABLE backlinks
+        ADD COLUMN IF NOT EXISTS status_history JSONB NOT NULL DEFAULT '[]'::jsonb;
+      CREATE INDEX IF NOT EXISTS idx_backlinks_last_checked_at
+        ON backlinks (last_checked_at);
+      CREATE TABLE IF NOT EXISTS extension_generated_content (
+        id                BIGSERIAL PRIMARY KEY,
+        website_id        BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+        resource_id       BIGINT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+        request_hash      TEXT NOT NULL,
+        language          TEXT NOT NULL DEFAULT 'auto',
+        model             TEXT NOT NULL,
+        content           JSONB NOT NULL,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (website_id, resource_id, request_hash)
+      );
+      CREATE INDEX IF NOT EXISTS idx_extension_generated_content_pair
+        ON extension_generated_content (website_id, resource_id);
     `).then(() => undefined).catch((error) => {
       schemaReady = null;
       throw error;
@@ -448,6 +491,11 @@ async function loadWithClient(client: PoolClient | null = null) {
       status: row.status,
       anchorText: row.anchor_text || '',
       targetUrl: row.target_url || '',
+      submissionUrl: row.submission_url || '',
+      liveUrl: row.live_url || '',
+      submittedAt: row.submitted_at || '',
+      lastCheckedAt: row.last_checked_at || '',
+      statusHistory: Array.isArray(row.status_history) ? row.status_history : [],
       placementDate: row.placement_date || '',
       removalDate: row.removal_date || '',
       cost: Number(row.cost) || 0,
@@ -849,6 +897,11 @@ async function upsertSubmission(
     number(submission.cost),
     text(submission.notes) || null,
     nullableDate(submission.createdAt),
+    nullableDate(submission.submittedAt),
+    text(submission.submissionUrl) || null,
+    text(submission.liveUrl) || null,
+    nullableDate(submission.lastCheckedAt),
+    JSON.stringify(normalizeSubmissionHistory(submission.statusHistory)),
   ];
 
   let result;
@@ -857,22 +910,31 @@ async function upsertSubmission(
       `UPDATE backlinks SET website_id = $1, resource_id = $2,
        status = $3::backlink_status, anchor_text = $4, target_url = $5,
        placement_date = $6::date, removal_date = $7::date, cost = $8,
-       notes = $9, updated_at = CURRENT_TIMESTAMP WHERE id = $11 RETURNING id`,
+       notes = $9, submitted_at = $11::timestamptz, submission_url = $12,
+       live_url = $13, last_checked_at = $14::timestamptz,
+       status_history = $15::jsonb, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $16 RETURNING id`,
       [...values, requestedId],
     );
     if (!result.rowCount) {
       result = await client.query(
         `INSERT INTO backlinks (
            id, website_id, resource_id, status, anchor_text, target_url,
-           placement_date, removal_date, cost, notes, created_at, updated_at
+           placement_date, removal_date, cost, notes, created_at, submitted_at,
+           submission_url, live_url, last_checked_at, status_history, updated_at
          ) VALUES (
-           $11, $1, $2, $3::backlink_status, $4, $5, $6::date, $7::date,
-           $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
+           $16, $1, $2, $3::backlink_status, $4, $5, $6::date, $7::date,
+           $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
+           $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
          ) ON CONFLICT (website_id, resource_id) DO UPDATE SET
            status = EXCLUDED.status, anchor_text = EXCLUDED.anchor_text,
            target_url = EXCLUDED.target_url, placement_date = EXCLUDED.placement_date,
            removal_date = EXCLUDED.removal_date, cost = EXCLUDED.cost,
-           notes = EXCLUDED.notes, updated_at = CURRENT_TIMESTAMP RETURNING id`,
+           notes = EXCLUDED.notes, submitted_at = EXCLUDED.submitted_at,
+           submission_url = EXCLUDED.submission_url, live_url = EXCLUDED.live_url,
+           last_checked_at = EXCLUDED.last_checked_at,
+           status_history = EXCLUDED.status_history,
+           updated_at = CURRENT_TIMESTAMP RETURNING id`,
         [...values, requestedId],
       );
     }
@@ -880,15 +942,21 @@ async function upsertSubmission(
     await client.query(
       `INSERT INTO backlinks (
          website_id, resource_id, status, anchor_text, target_url,
-         placement_date, removal_date, cost, notes, created_at, updated_at
+         placement_date, removal_date, cost, notes, created_at, submitted_at,
+         submission_url, live_url, last_checked_at, status_history, updated_at
        ) VALUES (
          $1, $2, $3::backlink_status, $4, $5, $6::date, $7::date,
-         $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
+         $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
+         $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
        ) ON CONFLICT (website_id, resource_id) DO UPDATE SET
          status = EXCLUDED.status, anchor_text = EXCLUDED.anchor_text,
          target_url = EXCLUDED.target_url, placement_date = EXCLUDED.placement_date,
          removal_date = EXCLUDED.removal_date, cost = EXCLUDED.cost,
-         notes = EXCLUDED.notes, updated_at = CURRENT_TIMESTAMP`,
+         notes = EXCLUDED.notes, submitted_at = EXCLUDED.submitted_at,
+         submission_url = EXCLUDED.submission_url, live_url = EXCLUDED.live_url,
+         last_checked_at = EXCLUDED.last_checked_at,
+         status_history = EXCLUDED.status_history,
+         updated_at = CURRENT_TIMESTAMP`,
       values,
     );
   }

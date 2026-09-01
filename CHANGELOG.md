@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0] - 2026-09-02
+### Added
+- Persistent submission timestamps, submission and live URLs, last-check metadata, and bounded status history for every website-resource relationship.
+- A Bearer-protected `/api/extension/content` endpoint using structured OpenAI output and per-target database caching.
+- An idempotent migration for submission tracking and generated-content storage.
+
+### Changed
+- Extension workspace reads and writes now round-trip the complete submission tracking record.
+- Target-specific copy defaults to `gpt-5-nano` and can be changed with `OPENAI_CONTENT_MODEL`; the API key remains backend-only.
+
+### Fixed
+- Submission history payloads are normalized and size-limited before PostgreSQL writes.
+
 ## [0.6.0] - 2026-09-01
 ### Added
 - Dedicated PostgreSQL screening columns and indexes for extension prospects.

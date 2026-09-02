@@ -964,14 +964,32 @@ export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
 
     if (Array.isArray(rawPatch.queue)) {
       const queue = strings(rawPatch.queue);
-      await client.query('UPDATE extension_prospects SET queue_position = NULL');
-      for (const [position, rootDomain] of queue.entries()) {
-        await client.query(
-          `UPDATE extension_prospects SET queue_position = $1, updated_at = CURRENT_TIMESTAMP
-           WHERE root_domain = $2 AND excluded = FALSE`,
-          [position, rootDomain],
-        );
-      }
+      await client.query(
+        `WITH incoming AS (
+           SELECT
+             root_domain,
+             (ordinality - 1)::INTEGER AS queue_position
+           FROM unnest($1::text[]) WITH ORDINALITY
+             AS queued(root_domain, ordinality)
+         ),
+         next_positions AS (
+           SELECT
+             prospect.root_domain,
+             CASE
+               WHEN prospect.excluded THEN NULL
+               ELSE incoming.queue_position
+             END AS queue_position
+           FROM extension_prospects AS prospect
+           LEFT JOIN incoming USING (root_domain)
+         )
+         UPDATE extension_prospects AS prospect
+         SET queue_position = next_positions.queue_position,
+             updated_at = CURRENT_TIMESTAMP
+         FROM next_positions
+         WHERE prospect.root_domain = next_positions.root_domain
+           AND prospect.queue_position IS DISTINCT FROM next_positions.queue_position`,
+        [queue],
+      );
     }
 
     return loadWithClient(client);

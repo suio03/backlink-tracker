@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.3] - 2026-09-02
+### Fixed
+- Workspace queue changes now update prospect positions in one bulk query, preventing single opportunity decisions from timing out on large queues.
+
 ## [0.7.2] - 2026-09-02
 ### Changed
 - Extension API schema changes are now applied only through explicit idempotent migrations instead of authenticated request handlers.

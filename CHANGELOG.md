@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2] - 2026-09-02
+### Changed
+- Extension API schema changes are now applied only through explicit idempotent migrations instead of authenticated request handlers.
+
+### Fixed
+- Workspace GET and PATCH requests no longer execute runtime DDL that can wait on table locks and exhaust the Vercel function timeout.
+
 ## [0.7.1] - 2026-09-02
 ### Fixed
 - Submission upserts now work with both text-backed and enum-backed PostgreSQL status columns, restoring extension workspace PATCH compatibility.

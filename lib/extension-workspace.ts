@@ -57,8 +57,6 @@ const VALID_SUBMISSION_STATUSES = new Set([
   'removed',
 ]);
 
-let schemaReady: Promise<void> | null = null;
-
 function text(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -278,118 +276,6 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
 }
 
-export async function ensureExtensionWorkspaceSchema(): Promise<void> {
-  if (!schemaReady) {
-    schemaReady = query(`
-      CREATE TABLE IF NOT EXISTS extension_prospects (
-        root_domain       TEXT PRIMARY KEY,
-        authority         INTEGER,
-        csv_file_count    INTEGER,
-        source_count      INTEGER NOT NULL DEFAULT 0,
-        source_files      TEXT,
-        status            TEXT NOT NULL DEFAULT 'pending',
-        submission_url    TEXT,
-        notes             TEXT,
-        excluded          BOOLEAN NOT NULL DEFAULT FALSE,
-        excluded_at       TIMESTAMPTZ,
-        excluded_reason   TEXT,
-        last_opened_at    TIMESTAMPTZ,
-        last_imported_at  TIMESTAMPTZ,
-        last_seen_at      TIMESTAMPTZ,
-        import_order      INTEGER NOT NULL DEFAULT 0,
-        queue_position    INTEGER,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_extension_prospects_status
-        ON extension_prospects (status);
-      CREATE INDEX IF NOT EXISTS idx_extension_prospects_queue
-        ON extension_prospects (queue_position);
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS source_count INTEGER NOT NULL DEFAULT 0;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_status TEXT NOT NULL DEFAULT 'unscreened';
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_category TEXT;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_confidence INTEGER;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_cost TEXT NOT NULL DEFAULT 'unknown';
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_entry_url TEXT;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_summary TEXT;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_evidence JSONB NOT NULL DEFAULT '[]'::jsonb;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screening_ruleset TEXT;
-      ALTER TABLE extension_prospects
-        ADD COLUMN IF NOT EXISTS screened_at TIMESTAMPTZ;
-      CREATE INDEX IF NOT EXISTS idx_extension_prospects_screening_status
-        ON extension_prospects (screening_status);
-      CREATE INDEX IF NOT EXISTS idx_extension_prospects_screening_category
-        ON extension_prospects (screening_category);
-      CREATE TABLE IF NOT EXISTS extension_prospect_sources (
-        root_domain       TEXT NOT NULL REFERENCES extension_prospects(root_domain) ON DELETE CASCADE,
-        source_domain     TEXT NOT NULL,
-        authority         INTEGER,
-        first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (root_domain, source_domain)
-      );
-      CREATE INDEX IF NOT EXISTS idx_extension_prospect_sources_source
-        ON extension_prospect_sources (source_domain);
-      CREATE TABLE IF NOT EXISTS extension_form_workflows (
-        workflow_id       TEXT PRIMARY KEY,
-        resource_id       BIGINT NOT NULL UNIQUE REFERENCES resources(id) ON DELETE CASCADE,
-        domain            TEXT NOT NULL,
-        name              TEXT NOT NULL DEFAULT 'Submission workflow',
-        status            TEXT NOT NULL DEFAULT 'learning',
-        version           INTEGER NOT NULL DEFAULT 1,
-        steps             JSONB NOT NULL DEFAULT '[]'::jsonb,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_extension_form_workflows_resource
-        ON extension_form_workflows (resource_id);
-      ALTER TABLE website_extended_info
-        ADD COLUMN IF NOT EXISTS short_description TEXT;
-      ALTER TABLE backlinks
-        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ;
-      ALTER TABLE backlinks
-        ADD COLUMN IF NOT EXISTS submission_url TEXT;
-      ALTER TABLE backlinks
-        ADD COLUMN IF NOT EXISTS live_url TEXT;
-      ALTER TABLE backlinks
-        ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
-      ALTER TABLE backlinks
-        ADD COLUMN IF NOT EXISTS status_history JSONB NOT NULL DEFAULT '[]'::jsonb;
-      CREATE INDEX IF NOT EXISTS idx_backlinks_last_checked_at
-        ON backlinks (last_checked_at);
-      CREATE TABLE IF NOT EXISTS extension_generated_content (
-        id                BIGSERIAL PRIMARY KEY,
-        website_id        BIGINT NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
-        resource_id       BIGINT NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
-        request_hash      TEXT NOT NULL,
-        language          TEXT NOT NULL DEFAULT 'auto',
-        model             TEXT NOT NULL,
-        content           JSONB NOT NULL,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (website_id, resource_id, request_hash)
-      );
-      CREATE INDEX IF NOT EXISTS idx_extension_generated_content_pair
-        ON extension_generated_content (website_id, resource_id);
-    `).then(() => undefined).catch((error) => {
-      schemaReady = null;
-      throw error;
-    });
-  }
-  return schemaReady;
-}
-
 async function loadWithClient(client: PoolClient | null = null) {
   const run = (sql: string, params?: unknown[]) =>
     client ? client.query(sql, params) : query(sql, params);
@@ -518,14 +404,12 @@ async function loadWithClient(client: PoolClient | null = null) {
 }
 
 export async function loadExtensionWorkspace() {
-  await ensureExtensionWorkspaceSchema();
   return loadWithClient();
 }
 
 export async function importExtensionProspectReport(
   payload: ProspectReportPayload,
 ) {
-  await ensureExtensionWorkspaceSchema();
   const report = normalizeProspectReport(payload);
   const rootDomains = report.records.map((record) => record.rootDomain);
 
@@ -635,7 +519,6 @@ export async function importExtensionProspectReport(
 export async function applyProspectScreeningResults(
   payload: ProspectScreeningPayload,
 ) {
-  await ensureExtensionWorkspaceSchema();
   const results = normalizeProspectScreeningPayload(payload);
   if (!results.length) {
     throw new ProspectReportInputError('Screening batch contains no valid results');
@@ -1013,7 +896,6 @@ async function upsertWorkflow(
 }
 
 export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
-  await ensureExtensionWorkspaceSchema();
   return transaction(async (client) => {
     const prospects = rawPatch.prospects || {};
     const websites = rawPatch.websites || {};

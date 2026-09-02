@@ -117,8 +117,7 @@ The database will be automatically initialized with:
 ### Manual Database Operations
 
 Before deploying extension submission tracking and generated content, apply the
-idempotent migration once (authenticated extension requests also ensure the
-same schema defensively):
+idempotent migration once. API request handlers do not run schema DDL:
 
 ```bash
 docker exec -i backlink-postgres psql -U backlink_user -d backlink_tracker \

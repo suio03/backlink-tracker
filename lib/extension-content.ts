@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { query } from '@/lib/database';
-import { ensureExtensionWorkspaceSchema } from '@/lib/extension-workspace';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -150,7 +149,6 @@ async function requestOpenAI(model: string, input: JsonRecord) {
 }
 
 export async function generateExtensionContent(payload: ExtensionContentPayload) {
-  await ensureExtensionWorkspaceSchema();
   const websiteId = numericId(payload.websiteId);
   const resourceId = numericId(payload.resourceId);
   if (!websiteId || !resourceId) {

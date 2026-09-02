@@ -68,8 +68,8 @@ application at `http://localhost:3001`.
 
 ## Database migrations
 
-The extension API defensively creates missing extension tables and columns on
-its first authenticated request. Migrations can also be applied explicitly:
+The extension API expects its schema migrations to be applied before deployment.
+Run the idempotent migrations explicitly; request handlers never run DDL:
 
 ```bash
 psql "$DATABASE_URL" -f migrations/add-extension-prospects.sql
@@ -77,6 +77,7 @@ psql "$DATABASE_URL" -f migrations/add-extension-prospect-sources.sql
 psql "$DATABASE_URL" -f migrations/add-extension-prospect-screening.sql
 psql "$DATABASE_URL" -f migrations/add-extension-form-workflows.sql
 psql "$DATABASE_URL" -f migrations/add-extension-submission-tracking.sql
+psql "$DATABASE_URL" -f migrations/add-short-description-to-website-info.sql
 ```
 
 The final migration adds submission tracking columns plus

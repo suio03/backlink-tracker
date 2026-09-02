@@ -765,7 +765,8 @@ async function upsertWebsite(
   if (requestedId) {
     result = await client.query(
       `UPDATE websites SET domain = $1, name = $2, category = $3,
-       is_active = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING id`,
+       is_active = $4, created_at = COALESCE($5::timestamptz, created_at),
+       updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING id`,
       [...values, requestedId],
     );
     if (!result.rowCount) {
@@ -837,7 +838,8 @@ async function upsertResource(
     result = await client.query(
       `UPDATE resources SET domain = $1, url = $2, contact_email = $3,
        domain_authority = $4, category = $5, cost = $6, notes = $7,
-       is_active = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $10 RETURNING id`,
+       is_active = $8, created_at = COALESCE($9::timestamptz, created_at),
+       updated_at = CURRENT_TIMESTAMP WHERE id = $10 RETURNING id`,
       [...values, requestedId],
     );
     if (!result.rowCount) {
@@ -910,7 +912,8 @@ async function upsertSubmission(
       `UPDATE backlinks SET website_id = $1, resource_id = $2,
        status = $3, anchor_text = $4, target_url = $5,
        placement_date = $6::date, removal_date = $7::date, cost = $8,
-       notes = $9, submitted_at = $11::timestamptz, submission_url = $12,
+       notes = $9, created_at = COALESCE($10::timestamptz, created_at),
+       submitted_at = $11::timestamptz, submission_url = $12,
        live_url = $13, last_checked_at = $14::timestamptz,
        status_history = $15::jsonb, updated_at = CURRENT_TIMESTAMP
        WHERE id = $16 RETURNING id`,

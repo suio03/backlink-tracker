@@ -3,6 +3,7 @@
 ## [0.7.1] - 2026-09-02
 ### Fixed
 - Submission upserts now work with both text-backed and enum-backed PostgreSQL status columns, restoring extension workspace PATCH compatibility.
+- Existing website, resource, and submission updates now bind their preserved creation timestamps explicitly instead of failing PostgreSQL parameter inference.
 
 ## [0.7.0] - 2026-09-02
 ### Added

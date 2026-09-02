@@ -908,7 +908,7 @@ async function upsertSubmission(
   if (requestedId) {
     result = await client.query(
       `UPDATE backlinks SET website_id = $1, resource_id = $2,
-       status = $3::backlink_status, anchor_text = $4, target_url = $5,
+       status = $3, anchor_text = $4, target_url = $5,
        placement_date = $6::date, removal_date = $7::date, cost = $8,
        notes = $9, submitted_at = $11::timestamptz, submission_url = $12,
        live_url = $13, last_checked_at = $14::timestamptz,
@@ -923,7 +923,7 @@ async function upsertSubmission(
            placement_date, removal_date, cost, notes, created_at, submitted_at,
            submission_url, live_url, last_checked_at, status_history, updated_at
          ) VALUES (
-           $16, $1, $2, $3::backlink_status, $4, $5, $6::date, $7::date,
+           $16, $1, $2, $3, $4, $5, $6::date, $7::date,
            $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
            $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
          ) ON CONFLICT (website_id, resource_id) DO UPDATE SET
@@ -945,7 +945,7 @@ async function upsertSubmission(
          placement_date, removal_date, cost, notes, created_at, submitted_at,
          submission_url, live_url, last_checked_at, status_history, updated_at
        ) VALUES (
-         $1, $2, $3::backlink_status, $4, $5, $6::date, $7::date,
+         $1, $2, $3, $4, $5, $6::date, $7::date,
          $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
          $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
        ) ON CONFLICT (website_id, resource_id) DO UPDATE SET

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.1] - 2026-09-02
+### Fixed
+- Submission upserts now work with both text-backed and enum-backed PostgreSQL status columns, restoring extension workspace PATCH compatibility.
+
 ## [0.7.0] - 2026-09-02
 ### Added
 - Persistent submission timestamps, submission and live URLs, last-check metadata, and bounded status history for every website-resource relationship.

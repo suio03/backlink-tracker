@@ -21,10 +21,26 @@ export interface ProspectScreeningPayload {
   results?: unknown;
 }
 
+export interface OpportunityDecisionPayload {
+  action?: unknown;
+  rootDomain?: unknown;
+  reason?: unknown;
+}
+
 export class ProspectReportInputError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ProspectReportInputError';
+  }
+}
+
+export class OpportunityDecisionInputError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'OpportunityDecisionInputError';
+    this.status = status;
   }
 }
 
@@ -55,6 +71,11 @@ const VALID_SUBMISSION_STATUSES = new Set([
   'live',
   'rejected',
   'removed',
+]);
+const VALID_OPPORTUNITY_DECISIONS = new Set([
+  'confirm',
+  'exclude',
+  'restore',
 ]);
 
 function text(value: unknown): string {
@@ -274,6 +295,80 @@ function records(value: unknown): JsonRecord[] {
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
+}
+
+function serializeProspect(row: JsonRecord) {
+  return {
+    rootDomain: row.root_domain,
+    as: row.authority,
+    csvFileCount: row.csv_file_count,
+    sourceCount: Number(row.source_count) || 0,
+    sourceFiles: row.source_files || '',
+    status: row.status,
+    submissionUrl: row.submission_url || '',
+    notes: row.notes || '',
+    excluded: row.excluded,
+    excludedAt: row.excluded_at || '',
+    excludedReason: row.excluded_reason || '',
+    lastOpenedAt: row.last_opened_at || '',
+    lastImportedAt: row.last_imported_at || '',
+    lastSeenAt: row.last_seen_at || '',
+    screeningStatus: row.screening_status || 'unscreened',
+    screeningCategory: row.screening_category || '',
+    screeningConfidence:
+      row.screening_confidence === null
+        ? null
+        : Number(row.screening_confidence),
+    screeningCost: row.screening_cost || 'unknown',
+    screeningEntryUrl: row.screening_entry_url || '',
+    screeningSummary: row.screening_summary || '',
+    screeningEvidence: Array.isArray(row.screening_evidence)
+      ? row.screening_evidence
+      : [],
+    screeningRuleset: row.screening_ruleset || '',
+    screenedAt: row.screened_at || '',
+    importOrder: row.import_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function serializeResource(row: JsonRecord) {
+  return {
+    id: String(row.id),
+    domain: row.domain,
+    url: row.url,
+    contactEmail: row.contact_email || '',
+    authority: Number(row.domain_authority) || 0,
+    category: row.category,
+    cost: Number(row.cost) || 0,
+    notes: row.notes || '',
+    active: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function serializeSubmission(row: JsonRecord) {
+  return {
+    id: String(row.id),
+    websiteId: String(row.website_id),
+    resourceId: String(row.resource_id),
+    status: row.status,
+    anchorText: row.anchor_text || '',
+    targetUrl: row.target_url || '',
+    submissionUrl: row.submission_url || '',
+    liveUrl: row.live_url || '',
+    submittedAt: row.submitted_at || '',
+    lastCheckedAt: row.last_checked_at || '',
+    statusHistory: Array.isArray(row.status_history) ? row.status_history : [],
+    placementDate: row.placement_date || '',
+    removalDate: row.removal_date || '',
+    cost: Number(row.cost) || 0,
+    notes: row.notes || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 async function loadWithClient(client: PoolClient | null = null) {
@@ -893,6 +988,154 @@ async function upsertWorkflow(
       nullableDate(workflow.createdAt),
     ],
   );
+}
+
+export async function applyExtensionOpportunityDecision(
+  payload: OpportunityDecisionPayload,
+) {
+  const action = text(payload.action);
+  const rootDomain = normalizeDomain(payload.rootDomain);
+  const reason = text(payload.reason).slice(0, 200) || 'manual';
+  if (!rootDomain) {
+    throw new OpportunityDecisionInputError('A valid rootDomain is required');
+  }
+  if (!VALID_OPPORTUNITY_DECISIONS.has(action)) {
+    throw new OpportunityDecisionInputError(
+      'action must be confirm, exclude, or restore',
+    );
+  }
+
+  return transaction(async (client) => {
+    let prospect;
+    let resource = null;
+    let submissions: JsonRecord[] = [];
+
+    if (action === 'exclude') {
+      prospect = await client.query(
+        `UPDATE extension_prospects
+         SET excluded = TRUE,
+             excluded_at = CURRENT_TIMESTAMP,
+             excluded_reason = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE root_domain = $1
+         RETURNING *`,
+        [rootDomain, reason],
+      );
+      if (!prospect.rowCount) {
+        const existingResource = await client.query(
+          'SELECT * FROM resources WHERE domain = $1',
+          [rootDomain],
+        );
+        if (!existingResource.rowCount) {
+          throw new OpportunityDecisionInputError(
+            'Opportunity not found',
+            404,
+          );
+        }
+        const row = existingResource.rows[0];
+        prospect = await client.query(
+          `INSERT INTO extension_prospects (
+             root_domain, authority, status, excluded, excluded_at,
+             excluded_reason, import_order, created_at, updated_at
+           )
+           SELECT $1, $2, 'pending', TRUE, CURRENT_TIMESTAMP, $3,
+             COALESCE(MAX(import_order), -1) + 1,
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+           FROM extension_prospects
+           RETURNING *`,
+          [rootDomain, row.domain_authority, reason],
+        );
+      }
+    } else if (action === 'restore') {
+      prospect = await client.query(
+        `UPDATE extension_prospects
+         SET excluded = FALSE,
+             excluded_at = NULL,
+             excluded_reason = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE root_domain = $1
+         RETURNING *`,
+        [rootDomain],
+      );
+      if (!prospect.rowCount) {
+        throw new OpportunityDecisionInputError('Opportunity not found', 404);
+      }
+    } else {
+      prospect = await client.query(
+        `UPDATE extension_prospects
+         SET status = 'can_add',
+             excluded = FALSE,
+             excluded_at = NULL,
+             excluded_reason = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE root_domain = $1
+         RETURNING *`,
+        [rootDomain],
+      );
+      resource = await client.query(
+        'SELECT * FROM resources WHERE domain = $1',
+        [rootDomain],
+      );
+      if (!resource.rowCount && !prospect.rowCount) {
+        throw new OpportunityDecisionInputError('Opportunity not found', 404);
+      }
+      if (!resource.rowCount) {
+        const row = prospect.rows[0];
+        resource = await client.query(
+          `INSERT INTO resources (
+             domain, url, domain_authority, category, cost, notes,
+             is_active, created_at, updated_at
+           ) VALUES (
+             $1, $2, $3, $4, 0, $5, TRUE,
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (domain) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+           RETURNING *`,
+          [
+            rootDomain,
+            row.screening_entry_url ||
+              row.submission_url ||
+              `https://${rootDomain}`,
+            Number(row.authority) || 0,
+            row.screening_category || 'directory',
+            row.notes || null,
+          ],
+        );
+      } else {
+        resource = await client.query(
+          `UPDATE resources SET updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1 RETURNING *`,
+          [resource.rows[0].id],
+        );
+      }
+      const resourceId = resource.rows[0].id;
+      await client.query(
+        `INSERT INTO backlinks (website_id, resource_id, status)
+         SELECT id, $1, 'pending' FROM websites WHERE is_active = TRUE
+         ON CONFLICT (website_id, resource_id) DO NOTHING`,
+        [resourceId],
+      );
+      const submissionResult = await client.query(
+        `SELECT * FROM backlinks
+         WHERE resource_id = $1
+         ORDER BY website_id`,
+        [resourceId],
+      );
+      submissions = submissionResult.rows;
+    }
+
+    return {
+      action,
+      rootDomain,
+      prospect: prospect.rowCount
+        ? serializeProspect(prospect.rows[0])
+        : null,
+      resource: resource?.rowCount
+        ? serializeResource(resource.rows[0])
+        : null,
+      submissions: submissions.map(serializeSubmission),
+    };
+  });
 }
 
 export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {

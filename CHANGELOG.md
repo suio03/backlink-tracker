@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0] - 2026-09-03
+### Added
+- A scoped opportunity decision endpoint for confirmation, exclusion, and restoration that returns only changed records.
+
+### Changed
+- Exclusion and restoration now update one prospect without rewriting queue positions or returning the complete workspace.
+- Confirmation now creates or reuses only the selected resource and backfills its active-website submission rows.
+
 ## [0.7.3] - 2026-09-02
 ### Fixed
 - Workspace queue changes now update prospect positions in one bulk query, preventing single opportunity decisions from timing out on large queues.

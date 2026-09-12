@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-12
+### Fixed
+- Website descriptions, short descriptions, and categories preserve Markdown line breaks, indentation, blank lines, and hard breaks when saved through the extension API.
+
 ## [0.8.0] - 2026-09-03
 ### Added
 - A scoped opportunity decision endpoint for confirmation, exclusion, and restoration that returns only changed records.

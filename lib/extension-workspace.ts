@@ -82,6 +82,10 @@ function text(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function markdownText(value: unknown): string {
+  return String(value ?? '').replace(/\r\n?/g, '\n');
+}
+
 function number(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -733,7 +737,7 @@ async function upsertWebsite(
   const values = [
     text(website.domain),
     text(website.name) || text(website.domain),
-    text(website.category),
+    markdownText(website.category),
     boolean(website.active),
     nullableDate(website.createdAt),
   ];
@@ -783,8 +787,8 @@ async function upsertWebsite(
       websiteId,
       text(website.supportEmail) || null,
       text(website.title) || null,
-      text(website.shortDescription) || null,
-      text(website.description) || null,
+      markdownText(website.shortDescription) || null,
+      markdownText(website.description) || null,
       text(website.url) || null,
     ],
   );

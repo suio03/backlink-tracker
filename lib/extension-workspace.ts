@@ -502,8 +502,8 @@ async function loadWithClient(client: PoolClient | null = null) {
   };
 }
 
-export async function loadExtensionWorkspace() {
-  return loadWithClient();
+export async function loadExtensionWorkspace(client: PoolClient | null = null) {
+  return loadWithClient(client);
 }
 
 export async function importExtensionProspectReport(

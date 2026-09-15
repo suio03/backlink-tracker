@@ -23,6 +23,7 @@ export function Navigation({ selectedWebsite, onBack, showStats = true }: Naviga
               <h1 className="text-xl font-bold text-gray-900">Backlink Tracker</h1>
             </Link>
             <div className="flex items-center space-x-4">
+              <Link href="/operations" className="text-sm font-medium text-violet-700 px-3 py-2">外链运营台</Link>
               <Link
                 href="/websites"
                 className="flex items-center text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"

@@ -102,3 +102,7 @@ npm run build
 `npm run build` performs the production compilation and TypeScript validity
 check. Deployment details, database backup commands, and Dokploy configuration
 are documented in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+## Manual backlink operations
+
+The persistent `/operations` dashboard reuses the existing workspace and tracks each brand’s daily submissions, directory listings, FIFO resource verification, manual worklists and immutable report versions. No scheduler is installed. See [OPERATIONS.md](./OPERATIONS.md) for setup, API and operator instructions.

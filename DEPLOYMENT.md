@@ -1,3 +1,19 @@
+# Production deployment: Vercel
+
+The existing production site `https://backlink.actone.app` is deployed by Vercel from `suio03/backlink-tracker`, branch `main`. The local monorepo is named `backlink-desk`; keep using the existing GitHub repository and Vercel project.
+
+## Monorepo cutover
+
+Before the first monorepo deployment, set Vercel **Settings → Build and Deployment → Root Directory** to `apps/web`. Use the app-local `package-lock.json`; the normal app commands are `npm ci --ignore-scripts` and `npm run build`. Preserve existing production environment variables, domain bindings and database connection. Never upload local `.env` files or database backups.
+
+Pushing `main` triggers the existing Vercel Git integration. A push alone is not deployment verification: check the matching deployment and then verify `/operations`, an unauthenticated `/api/operations` request (401), and an authenticated read using the existing token (200 with `ready: true`). Do not create tasks or submit external forms as deployment tests.
+
+The operations tables in the configured cloud database were confirmed present on 2026-09-15. Check schema readiness against the actual production connection; do not initialize a new database or seed existing data. After successful deployment, the local operations CLI can use `BACKLINK_OPERATIONS_URL=https://backlink.actone.app`.
+
+The Docker/Dokploy instructions below describe an alternative deployment setup, not the verified current production deployment.
+
+---
+
 # Backlink Tracker - Docker Deployment Guide
 
 Complete guide for deploying the Backlink Tracker application using Docker and Dokploy.

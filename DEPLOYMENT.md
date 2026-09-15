@@ -2,9 +2,9 @@
 
 The existing production site `https://backlink.actone.app` is deployed by Vercel from `suio03/backlink-tracker`, branch `main`. The local monorepo is named `backlink-desk`; keep using the existing GitHub repository and Vercel project.
 
-## Monorepo cutover
+## Publishing from the local combined workspace
 
-Before the first monorepo deployment, set Vercel **Settings → Build and Deployment → Root Directory** to `apps/web`. Use the app-local `package-lock.json`; the normal app commands are `npm ci --ignore-scripts` and `npm run build`. Preserve existing production environment variables, domain bindings and database connection. Never upload local `.env` files or database backups.
+Only `apps/web` is published to the root of `suio03/backlink-tracker`; the extension is published separately to its original private repository. Keep Vercel's **Root Directory** at the existing repository root (empty / `.`), not `apps/web`. Use this repository's `package-lock.json`; normal commands are `npm ci --ignore-scripts` and `npm run build`. Preserve existing production environment variables, domains and database. Never upload local `.env` files or database backups.
 
 Pushing `main` triggers the existing Vercel Git integration. A push alone is not deployment verification: check the matching deployment and then verify `/operations`, an unauthenticated `/api/operations` request (401), and an authenticated read using the existing token (200 with `ready: true`). Do not create tasks or submit external forms as deployment tests.
 

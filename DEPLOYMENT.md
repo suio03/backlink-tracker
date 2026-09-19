@@ -293,3 +293,14 @@ If you encounter issues:
 4. Review Dokploy deployment logs
 
 The application includes comprehensive error handling and logging to help diagnose issues quickly.
+
+### Extension smart fill
+
+Deploy the `/api/extension/smart-fill` route with `BACKLINK_EXTENSION_TOKEN`,
+`TYPESAFE_API_KEY`, and the existing `OPENAI_API_KEY`. Optional overrides are
+`TYPESAFE_MODEL` (default `jev-latest`) and `OPENAI_CONTENT_MODEL` (existing default
+`gpt-5-nano`). No database migration is required. The route only reads the selected
+website profile; it does not write submission history. Allow up to 120 seconds for
+this request on the hosting platform. Reload the Chrome extension after deploying
+the matching backend. The Codex Skill's local credential file is not read by this
+service. Test with a public sample form before using real submission pages.

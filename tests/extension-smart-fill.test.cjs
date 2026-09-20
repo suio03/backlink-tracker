@@ -91,3 +91,43 @@ test('route bounds actual request body and rejects malformed JSON',async()=>{
   assert.equal((await handler.POST(request('x'.repeat(100001)))).status,413);
   assert.equal((await handler.POST(request('not json'))).status,400);assert.equal(calls,0);
 });
+
+test('stored descriptions, features and categories work without a copy API key', async () => {
+  const semantics = ['shortDescription','description','feature1','feature2','keywords','title'];
+  const f = fake(id => semantics[Number(id.slice(1))]);
+  const api = load(f.fetch, {TYPESAFE_API_KEY:'test'});
+  const profile = { title:'Pixfy', shortDescription:'Create consistent characters from your reference images.', category:'- AI Character Generator\n- AI Image Editor', description:'## Introduction\nCreate new scenes from your saved characters.\n\n## Tagline\nOne reference. More looks.\n\n## Key Features\n- Save reusable references\n- Edit images with prompts\n\n## API Availability\nNot available' };
+  const result = await api.planSmartFill(profile, semantics.map((_,i)=>field(`f${i}`)), 'English');
+  assert.deepEqual(Array.from(result.suggestions, s=>s.value), [profile.shortDescription,'Create new scenes from your saved characters.','Save reusable references','Edit images with prompts','AI Character Generator, AI Image Editor','Pixfy']);
+  assert.ok(result.suggestions.every(s=>s.source==='产品资料'));
+  assert.equal(result.metrics.copyCalls,0); assert.equal(f.calls.length,1);
+  assert.equal(f.calls[0].body.state.productFacts.apiAvailability, 'Not available');
+});
+test('word ranges and requested translation route only incompatible copy to generation', async () => {
+  const f = fake(id=>id==='f0'?'shortDescription':'title', {answers:[{id:'f0',value:'One two three four five'}]});
+  const result = await load(f.fetch).planSmartFill({shortDescription:'Too short',title:'Pixfy'}, [field('f0','text',{label:'Short description (5–10 words)'}),field('f1')], 'English');
+  assert.equal(result.suggestions[0].value,'One two three four five');
+  assert.equal(result.suggestions[1].source,'产品资料');
+  assert.equal(JSON.parse(f.calls[1].body.input).fields.length,1);
+  const translate = fake(()=>'description',{answers:[{id:'f0',value:'这是已经保存的产品介绍。'}]});
+  const translated=await load(translate.fetch).planSmartFill({description:'Saved English description'},[field('f0')],'Simplified Chinese');
+  assert.equal(translated.metrics.copyCalls,1);
+});
+test('unconfigured copy service preserves valid saved fields and explains incompatible ones', async () => {
+  const f=fake(id=>id==='f0'?'description':'shortDescription');
+  const result=await load(f.fetch,{TYPESAFE_API_KEY:'test'}).planSmartFill({description:'Existing introduction',shortDescription:'Too short'},[field('f0'),field('f1','text',{label:'Short description (20-30 words)'})],'English');
+  assert.equal(result.suggestions[0].value,'Existing introduction');
+  assert.equal(result.suggestions[1].value,null);
+  assert.match(result.suggestions[1].reason,/字数/);
+  assert.equal(f.calls.length,1);
+});
+test('legacy flattened profile sections are parsed without leaking technical sections into copy', () => {
+  const api=load(async()=>{});
+  const profile=api.savedProfileFacts({description:'## Introduction Saved intro ## Key Features One feature ## API Availability Not available'});
+  assert.equal(profile.introduction,'Saved intro');assert.equal(profile.keyFeatures,'One feature');
+});
+test('generated copy must also satisfy the word range', async () => {
+  const f=fake(()=>'shortDescription',{answers:[{id:'f0',value:'Too short'}]});
+  const result=await load(f.fetch).planSmartFill({},[field('f0','text',{label:'Short description (20-30 words)'})],'English');
+  assert.equal(result.suggestions[0].value,null);
+});

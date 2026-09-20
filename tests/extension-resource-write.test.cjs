@@ -18,12 +18,12 @@ async function setup(unique) {
     await db.exec(fs.readFileSync(path.join(root, 'migrations', file), 'utf8'));
   }
   await db.exec("INSERT INTO websites(domain,name,category) VALUES ('product.example','Product','AI');");
-  const database = { query: (sql, args) => db.query(sql, args), transaction: fn => db.transaction(tx => fn({query: async (sql,args) => {const r=await tx.query(sql,args);return {...r,rowCount:r.affectedRows};}})) };
+  const database = { query: (sql, args) => db.query(sql, args), transaction: fn => db.transaction(tx => fn({query: async (sql,args) => {const r=await tx.query(sql,args);return {...r,rowCount:r.rows.length || r.affectedRows};}})) };
   const exports = {};
   const source = fs.readFileSync(path.join(root, 'lib/extension-workspace.ts'), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-  vm.runInNewContext(compiled, { exports, require: name => { assert.equal(name, '@/lib/database'); return database; } });
-  return { db, patch: exports.applyExtensionWorkspacePatch };
+  vm.runInNewContext(compiled, { exports, URL, require: name => { assert.equal(name, '@/lib/database'); return database; } });
+  return { db, patch: exports.applyExtensionWorkspacePatch, decide: exports.applyExtensionOpportunityDecision };
 }
 
 for (const unique of [false, true]) {
@@ -46,6 +46,26 @@ for (const unique of [false, true]) {
       await assert.rejects(patch(payload), error => error.code === '23505');
       assert.equal((await db.query('SELECT count(*)::int AS n FROM resources')).rows[0].n, 1);
       assert.equal((await db.query('SELECT notes FROM resources')).rows[0].notes, 'keep existing notes');
+      assert.equal((await db.query('SELECT status FROM backlinks')).rows[0].status, 'live');
+    } finally { await db.close(); }
+  });
+}
+
+for (const unique of [false, true]) {
+  test(`confirm opportunity preserves history and is idempotent with domain unique constraint=${unique}`, async () => {
+    const { db, decide } = await setup(unique);
+    try {
+      await db.query("INSERT INTO extension_prospects(root_domain,authority,status) VALUES ('saascity.io',16,'pending')");
+      const result = await decide({action:'confirm',rootDomain:'saascity.io'});
+      assert.equal(result.prospect.status, 'can_add');
+      assert.equal(result.resource.domain, 'saascity.io');
+      assert.equal(result.submissions.length, 1);
+      await db.query("UPDATE resources SET domain='SAASCITY.IO',notes='keep review' WHERE id=$1", [result.resource.id]);
+      await db.query("UPDATE backlinks SET status='live',live_url='https://saascity.io/product' WHERE resource_id=$1", [result.resource.id]);
+      const again = await decide({action:'confirm',rootDomain:'saascity.io'});
+      assert.equal(again.resource.id, result.resource.id);
+      assert.equal(again.resource.notes, 'keep review');
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM resources')).rows[0].n, 1);
       assert.equal((await db.query('SELECT status FROM backlinks')).rows[0].status, 'live');
     } finally { await db.close(); }
   });

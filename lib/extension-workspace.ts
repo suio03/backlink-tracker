@@ -1075,6 +1075,9 @@ export async function applyExtensionOpportunityDecision(
         throw new OpportunityDecisionInputError('Opportunity not found', 404);
       }
     } else {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `extension-resource:${rootDomain}`,
+      ]);
       prospect = await client.query(
         `UPDATE extension_prospects
          SET status = 'can_add',
@@ -1087,7 +1090,7 @@ export async function applyExtensionOpportunityDecision(
         [rootDomain],
       );
       resource = await client.query(
-        'SELECT * FROM resources WHERE domain = $1',
+        'SELECT * FROM resources WHERE lower(btrim(domain)) = $1 ORDER BY id LIMIT 1',
         [rootDomain],
       );
       if (!resource.rowCount && !prospect.rowCount) {
@@ -1103,7 +1106,6 @@ export async function applyExtensionOpportunityDecision(
              $1, $2, $3, $4, 0, $5, TRUE,
              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
            )
-           ON CONFLICT (domain) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
            RETURNING *`,
           [
             rootDomain,

@@ -106,3 +106,18 @@ are documented in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 ## Manual backlink operations
 
 The persistent `/operations` dashboard reuses the existing workspace and tracks each brand’s daily submissions, directory listings, FIFO resource verification, manual worklists and immutable report versions. No scheduler is installed. See [OPERATIONS.md](./OPERATIONS.md) for setup, API and operator instructions.
+
+## Smart-fill automatic rewriting
+
+Use `env.copy.example` for the two copy-service settings. Merge them into the
+ignored `.env.local` for local development; for production add them to the
+Vercel project's Production environment and redeploy. Keep the existing Jev,
+database and extension authentication settings unchanged.
+
+Smart fill reuses saved copy that meets the field requirements. Otherwise it
+sends the full product profile, existing copy and parsed word limits to the
+copy model. Invalid or omitted answers get one automatic correction attempt;
+valid answers are retained. Both calls share a bounded time budget. Provider
+connection failures preserve other usable fields and show a retry message.
+Without `OPENAI_API_KEY`, incompatible fields explain their actual word count
+and the missing backend configuration; no automatic rewriting is claimed.

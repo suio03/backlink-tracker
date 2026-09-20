@@ -118,7 +118,7 @@ test('unconfigured copy service preserves valid saved fields and explains incomp
   const result=await load(f.fetch,{TYPESAFE_API_KEY:'test'}).planSmartFill({description:'Existing introduction',shortDescription:'Too short'},[field('f0'),field('f1','text',{label:'Short description (20-30 words)'})],'English');
   assert.equal(result.suggestions[0].value,'Existing introduction');
   assert.equal(result.suggestions[1].value,null);
-  assert.match(result.suggestions[1].reason,/字数/);
+  assert.match(result.suggestions[1].reason,/当前 2 个单词，要求 20–30/);
   assert.equal(f.calls.length,1);
 });
 test('legacy flattened profile sections are parsed without leaking technical sections into copy', () => {
@@ -130,4 +130,31 @@ test('generated copy must also satisfy the word range', async () => {
   const f=fake(()=>'shortDescription',{answers:[{id:'f0',value:'Too short'}]});
   const result=await load(f.fetch).planSmartFill({},[field('f0','text',{label:'Short description (20-30 words)'})],'English');
   assert.equal(result.suggestions[0].value,null);
+});
+
+test('Scribix descriptions are rewritten automatically and only invalid copy is retried', async () => {
+  const calls=[];let copy=0;
+  const short='Scribix turns long videos into captioned social media shorts using AI clip selection, editing tools, customizable captions, branding, and vertical framing.';
+  const long='Scribix helps turn podcasts, interviews, webinars, and other long videos into captioned shorts for social media. Users can let AI identify complete moments or guide clip selection with a topic. They can then refine clips, customize captions and branding, and export vertical videos together with cover images and post copy.';
+  const api=load(async(url,options)=>{
+    const body=JSON.parse(options.body);calls.push({url,body});
+    if(url.includes('typesafe'))return {ok:true,json:async()=>jev(body,id=>id==='f0'?'shortDescription':id==='f1'?'description':'name')};
+    copy++;
+    return {ok:true,json:async()=>({output_text:JSON.stringify({answers:copy===1?[{id:'f0',value:short},{id:'f1',value:'Too short'}]:[{id:'f1',value:long}]})})};
+  });
+  const result=await api.planSmartFill({name:'Scribix',shortDescription:'Turn long videos into captioned shorts with AI-powered clip selection, editing, and vertical framing.',description:'## Introduction\nScribix turns long videos into captioned shorts.\n\n## Key Features\n- Customize captions and branding\n- Export vertical videos with cover images and post copy'},[field('f0','text',{label:'Short description (20-30 words)',maxLength:5000}),field('f1','text',{label:'Long description (50-500 words)',maxLength:5000}),field('f2')],'English');
+  assert.equal(result.metrics.copyCalls,2);
+  assert.equal(result.suggestions[0].value,short);assert.equal(result.suggestions[1].value,long);assert.equal(result.suggestions[2].value,'Scribix');
+  const first=JSON.parse(calls[1].body.input),retry=JSON.parse(calls[2].body.input);
+  assert.deepEqual(first.fields[0].wordCount,{min:20,max:30});
+  assert.match(first.productFacts.keyFeatures,/branding/);
+  assert.equal(retry.fields.length,1);assert.equal(retry.fields[0].field.id,'f1');
+  assert.match(retry.fields[0].previousAttempt.issue,/当前 2 个单词/);
+});
+test('copy provider failures preserve stored suggestions without exposing provider bodies', async () => {
+  const api=load(async(url,options)=>url.includes('typesafe')?{ok:true,json:async()=>jev(JSON.parse(options.body),id=>id==='f0'?'name':'description')}:{ok:false,status:429,json:async()=>({secret:'never reveal'})});
+  const result=await api.planSmartFill({name:'Scribix'},[field('f0'),field('f1')],'English');
+  assert.equal(result.suggestions[0].value,'Scribix');
+  assert.match(result.suggestions[1].reason,/HTTP 429/);assert.doesNotMatch(result.suggestions[1].reason,/never reveal/);
+  assert.equal(result.metrics.copyCalls,1);
 });

@@ -837,6 +837,21 @@ async function upsertResource(
       );
     }
   } else {
+    // Legacy production databases do not have a unique constraint on domain.
+    // Serialize extension creates for the same domain, then reject duplicates
+    // instead of overwriting existing resource metadata and submission history.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `extension-resource:${domain.toLowerCase()}`,
+    ]);
+    const existing = await client.query(
+      'SELECT id FROM resources WHERE lower(btrim(domain)) = lower($1) LIMIT 1',
+      [domain],
+    );
+    if (existing.rows.length) {
+      throw Object.assign(new Error('A resource with this domain already exists'), {
+        code: '23505',
+      });
+    }
     result = await client.query(
       `INSERT INTO resources (
          domain, url, contact_email, domain_authority, category, cost, notes,
@@ -844,12 +859,7 @@ async function upsertResource(
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
          COALESCE($9::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
-       ) ON CONFLICT (domain) DO UPDATE SET
-         url = EXCLUDED.url, contact_email = EXCLUDED.contact_email,
-         domain_authority = EXCLUDED.domain_authority,
-         category = EXCLUDED.category, cost = EXCLUDED.cost,
-         notes = EXCLUDED.notes, is_active = EXCLUDED.is_active,
-         updated_at = CURRENT_TIMESTAMP RETURNING id`,
+       ) RETURNING id`,
       values,
     );
   }

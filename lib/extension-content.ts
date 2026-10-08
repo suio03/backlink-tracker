@@ -159,7 +159,7 @@ export async function generateExtensionContent(payload: ExtensionContentPayload)
   const model = text(process.env.OPENAI_CONTENT_MODEL, 100) || 'gpt-5-nano';
   const profileResult = await query(
     `SELECT w.id, w.domain, w.name, w.category, i.title,
-            COALESCE(to_jsonb(i)->>'short_description', '') AS short_description,
+            COALESCE(i.short_description, '') AS short_description,
             i.description, i.url
        FROM websites w
        LEFT JOIN website_extended_info i ON i.website_id = w.id
@@ -223,12 +223,12 @@ export async function generateExtensionContent(payload: ExtensionContentPayload)
     `INSERT INTO extension_generated_content (
        website_id, resource_id, request_hash, language, model, content,
        created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ) VALUES ($1, $2, $3, $4, $5, $6, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
      ON CONFLICT (website_id, resource_id, request_hash) DO UPDATE SET
        language = EXCLUDED.language,
        model = EXCLUDED.model,
        content = EXCLUDED.content,
-       updated_at = CURRENT_TIMESTAMP`,
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
     [websiteId, resourceId, requestHash, language, model, JSON.stringify(content)],
   );
   return { content, model, cached: false };

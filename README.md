@@ -1,6 +1,6 @@
 # Backlink Tracker
 
-Next.js 15 and PostgreSQL application for managing owned websites, backlink
+Next.js 15 and Cloudflare D1 application for managing owned websites, backlink
 resources, and the submission relationship between every website and resource.
 It also provides the authenticated backend used by the Backlink Desk Chrome
 extension.
@@ -8,12 +8,12 @@ extension.
 ## Runtime architecture
 
 - Next.js App Router with TypeScript and React 19.
-- PostgreSQL through `pg`; `DATABASE_URL` is the runtime connection source.
+- Cloudflare D1 through the Worker `DB` binding; no public database port.
 - `websites`, `website_extended_info`, `resources`, and `backlinks` hold the
   primary tracker data.
 - Extension-only prospect, source, learned-workflow, and generated-content data
   use separate `extension_*` tables.
-- Docker Compose and Dokploy are the supported production deployment path.
+- OpenNext on Cloudflare Workers is the production deployment path.
 
 The extension workspace must never read, write, migrate, or export
 `partner_links`. Partner-link routes remain a separate authenticated feature.
@@ -35,53 +35,31 @@ submitted time, submission URL, live URL, last-check time, and bounded status
 history.
 
 The content endpoint reads public website profile fields and target-resource
-metadata from PostgreSQL, then requests structured content from OpenAI. Set
+metadata from D1, then requests structured content from OpenAI. Set
 `OPENAI_API_KEY` only in the backend environment. `OPENAI_CONTENT_MODEL` is
 optional and defaults to `gpt-5-nano`; generated content is cached by the full
 website/resource/model/language/form-field input hash.
 
 ## Environment
 
-Copy `env.example` to `.env` for Docker or provide the same values through the
-deployment environment:
+Copy `env.example` to ignored `.dev.vars` for local development. Production
+credentials are Worker secrets. `BACKLINK_EXTENSION_TOKEN` authenticates the
+extension and operations API; `PARTNER_LINKS_ADMIN_TOKEN` authenticates partner
+writes; `OPENAI_API_KEY` enables copy generation. `DATABASE_URL` is not used.
+Never commit tokens, API keys or database snapshots.
 
-```dotenv
-DATABASE_URL=postgresql://backlink_user:change_this_password@postgres:5432/backlink_tracker?sslmode=disable
-BACKLINK_EXTENSION_TOKEN=replace_with_a_long_random_token
-OPENAI_API_KEY=replace_with_your_backend_only_openai_key
-OPENAI_CONTENT_MODEL=gpt-5-nano
-```
-
-Never commit real database credentials, extension tokens, or OpenAI keys.
-
-## Local development
+## Local development and schema
 
 ```bash
-npm install
+npm ci
+npm run db:migrate:local
 npm run dev
 ```
 
-The application is available at `http://localhost:3000` when run directly.
-For the Docker hot-reload environment, use the commands documented in
-[`README-Docker-Development.md`](README-Docker-Development.md); it exposes the
-application at `http://localhost:3001`.
-
-## Database migrations
-
-The extension API expects its schema migrations to be applied before deployment.
-Run the idempotent migrations explicitly; request handlers never run DDL:
-
-```bash
-psql "$DATABASE_URL" -f migrations/add-extension-prospects.sql
-psql "$DATABASE_URL" -f migrations/add-extension-prospect-sources.sql
-psql "$DATABASE_URL" -f migrations/add-extension-prospect-screening.sql
-psql "$DATABASE_URL" -f migrations/add-extension-form-workflows.sql
-psql "$DATABASE_URL" -f migrations/add-extension-submission-tracking.sql
-psql "$DATABASE_URL" -f migrations/add-short-description-to-website-info.sql
-```
-
-The final migration adds submission tracking columns plus
-`extension_generated_content`; it does not touch `partner_links`.
+The application runs at `http://localhost:3000`. Migrations in `d1-migrations/`
+are applied explicitly. Use `npm run db:migrate:remote` only for an intended
+production schema change; request handlers never run DDL. Historical PostgreSQL
+SQL in `migrations/` does not apply to D1.
 
 ## Main application API
 
@@ -95,13 +73,12 @@ The final migration adds submission tracking columns plus
 ## Verification
 
 ```bash
-npm run lint
-npm run build
+node --test tests/*.test.cjs
+npm run build:worker
 ```
 
-`npm run build` performs the production compilation and TypeScript validity
-check. Deployment details, database backup commands, and Dokploy configuration
-are documented in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+`npm run build:worker` compiles and validates the deployable Worker.
+Deployment and backup instructions are documented in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Manual backlink operations
 
@@ -109,10 +86,11 @@ The persistent `/operations` dashboard reuses the existing workspace and tracks 
 
 ## Smart-fill automatic rewriting
 
-Use `env.copy.example` for the two copy-service settings. Merge them into the
-ignored `.env.local` for local development; for production add them to the
-Vercel project's Production environment and redeploy. Keep the existing Jev,
-database and extension authentication settings unchanged.
+Jev smart fill is optional and excluded from the 2026-10-08 migration at the
+owner's request. The existing integration is retained but inactive without
+`TYPESAFE_API_KEY`; it does not block other application or extension features.
+To re-enable later, configure its key separately as a Worker secret. The copy
+service uses `OPENAI_API_KEY` and `OPENAI_CONTENT_MODEL`.
 
 Smart fill reuses saved copy that meets the field requirements. Otherwise it
 sends the full product profile, existing copy and parsed word limits to the

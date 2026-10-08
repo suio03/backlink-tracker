@@ -195,7 +195,7 @@ export async function updateBacklink(
   }
 
   // Add updated_at
-  fields.push(`updated_at = CURRENT_TIMESTAMP`);
+  fields.push(`updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`);
 
   const sql = `
     UPDATE backlinks 

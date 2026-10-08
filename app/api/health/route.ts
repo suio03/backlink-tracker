@@ -1,32 +1,10 @@
-/**
- * Health Check API Endpoint
- * Used by Docker health checks and monitoring systems
- */
-
 import { NextResponse } from 'next/server';
-
+import { query } from '@/lib/database';
 export async function GET() {
   try {
-    // Add any additional health checks here
-    // For example: database connectivity, external service checks, etc.
-    
-    const healthStatus = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-    };
-    
-    return NextResponse.json(healthStatus, { status: 200 });
-  } catch (error) {
-    console.error('Health check failed:', error);
-    
-    const errorStatus = {
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
-    
-    return NextResponse.json(errorStatus, { status: 503 });
+    await query('SELECT revision FROM workspace_revision WHERE id=1');
+    return NextResponse.json({status:'healthy',database:'d1',timestamp:new Date().toISOString()},{headers:{'Cache-Control':'no-store'}});
+  }catch{
+    return NextResponse.json({status:'unhealthy',database:'unavailable'},{status:503,headers:{'Cache-Control':'no-store'}});
   }
 }

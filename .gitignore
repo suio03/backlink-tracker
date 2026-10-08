@@ -40,3 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 scripts/
+# Cloudflare runtime and private migration artifacts
+.open-next/
+.wrangler/
+.dev.vars*
+.private/

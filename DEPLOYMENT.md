@@ -1,306 +1,69 @@
-# Production deployment: Vercel
+# Cloudflare Workers + D1 deployment
 
-The existing production site `https://backlink.actone.app` is deployed by Vercel from `suio03/backlink-tracker`, branch `main`. The local monorepo is named `backlink-desk`; keep using the existing GitHub repository and Vercel project.
+The production hostname is `https://backlink.actone.app`. OpenNext adapts the
+Next.js app to Worker `backlink-desk`; its `DB` binding is D1 `backlink-desk`.
+`wrangler.jsonc` routes `backlink.actone.app/*` to the Worker, with the existing
+proxied DNS record retained for rollback. It is the deployment configuration. PostgreSQL `DATABASE_URL`
+is no longer read by the application runtime.
 
-## Publishing from the local combined workspace
-
-Only `apps/web` is published to the root of `suio03/backlink-tracker`; the extension is published separately to its original private repository. Keep Vercel's **Root Directory** at the existing repository root (empty / `.`), not `apps/web`. Use this repository's `package-lock.json`; normal commands are `npm ci --ignore-scripts` and `npm run build`. Preserve existing production environment variables, domains and database. Never upload local `.env` files or database backups.
-
-Pushing `main` triggers the existing Vercel Git integration. A push alone is not deployment verification: check the matching deployment and then verify `/operations`, an unauthenticated `/api/operations` request (401), and an authenticated read using the existing token (200 with `ready: true`). Do not create tasks or submit external forms as deployment tests.
-
-The operations tables in the configured cloud database were confirmed present on 2026-09-15. Check schema readiness against the actual production connection; do not initialize a new database or seed existing data. After successful deployment, the local operations CLI can use `BACKLINK_OPERATIONS_URL=https://backlink.actone.app`.
-
-The Docker/Dokploy instructions below describe an alternative deployment setup, not the verified current production deployment.
-
----
-
-# Backlink Tracker - Docker Deployment Guide
-
-Complete guide for deploying the Backlink Tracker application using Docker and Dokploy.
-
-## Prerequisites
-
-- Docker and Docker Compose installed on your server
-- Dokploy set up and running
-- Domain name configured (optional but recommended)
-
-## Quick Start
-
-### 1. Environment Setup
-
-Copy the environment template and configure your settings:
+## Develop and verify
 
 ```bash
-cp env.example .env
+npm ci
+npm run db:migrate:local
+npm run dev
+node --test tests/*.test.cjs
+npm run build:worker
 ```
 
-Edit `.env` file with your configuration:
+Use an ignored `.dev.vars` for local secrets. Local D1 is isolated from
+production. `npm run preview` builds and runs the actual Worker locally.
+Tests exercise D1 through Miniflare/workerd, including atomic rollback,
+concurrent writes and reports larger than D1's per-row limit.
+
+## Deploy
+
+Authenticate Wrangler to the existing Cloudflare account. Keep the existing
+`BACKLINK_EXTENSION_TOKEN`, `PARTNER_LINKS_ADMIN_TOKEN`, and `OPENAI_API_KEY`
+as Worker secrets (set with `npx wrangler secret put NAME`). Never include
+secret values in command arguments, source control or build artifacts.
+`OPENAI_CONTENT_MODEL` is a normal Wrangler variable.
 
 ```bash
-# Database Configuration
-POSTGRES_DB=backlink_tracker
-POSTGRES_USER=backlink_user
-POSTGRES_PASSWORD=your_super_secure_password_here
-
-# Application Database URL
-DATABASE_URL=postgresql://backlink_user:your_super_secure_password_here@postgres:5432/backlink_tracker
-
-# Application Configuration
-NODE_ENV=production
-PORT=3000
-NEXT_TELEMETRY_DISABLED=1
-
-# Security Configuration (generate secure keys!)
-NEXTAUTH_SECRET=your_32_character_secret_key_here
-NEXTAUTH_URL=https://your-domain.com
-BACKLINK_EXTENSION_TOKEN=replace_with_a_long_random_token
-OPENAI_API_KEY=replace_with_your_backend_only_openai_key
-OPENAI_CONTENT_MODEL=gpt-5-nano
+npm run db:migrate:remote
+npm run deploy
 ```
 
-### 2. Generate Secure Keys
-
-Generate a secure NextAuth secret:
-
-```bash
-# Option 1: Using openssl
-openssl rand -base64 32
-
-# Option 2: Using Node.js
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-### 3. Local Testing (Optional)
-
-Test the setup locally before deployment:
-
-```bash
-# Install dependencies
-npm install
-
-# Build and run with Docker Compose
-docker-compose up --build
-
-# Access the application
-open http://localhost:3000
-```
-
-### 4. Dokploy Deployment
-
-#### Method A: Git Repository (Recommended)
-
-1. **Push your code to a Git repository** (GitHub, GitLab, etc.)
-
-2. **Create a new project in Dokploy:**
-   - Go to your Dokploy dashboard
-   - Create new application
-   - Select "Docker Compose" deployment type
-   - Connect your Git repository
-
-3. **Configure environment variables in Dokploy:**
-   - Add all variables from your `.env` file
-   - Make sure to use strong passwords for production
-
-4. **Deploy:**
-   - Dokploy will automatically build and deploy your application
-   - The PostgreSQL database will be initialized with schema and seed data
-
-#### Method B: Manual Upload
-
-1. **Prepare deployment files:**
-   ```bash
-   # Create a deployment package
-   tar -czf backlink-tracker.tar.gz \
-     --exclude=node_modules \
-     --exclude=.next \
-     --exclude=.git \
-     .
-   ```
-
-2. **Upload to your server and extract**
-
-3. **Deploy with Dokploy using the docker-compose.yml file**
-
-## Database Management
-
-### Initial Setup
-
-The database will be automatically initialized with:
-- Complete schema (tables, indexes, triggers)
-- Sample data (5 AI tool websites + 50 real directory resources)
-- Auto-linking functionality enabled
-
-### Manual Database Operations
-
-Before deploying extension submission tracking and generated content, apply the
-idempotent migration once. API request handlers do not run schema DDL:
-
-```bash
-docker exec -i backlink-postgres psql -U backlink_user -d backlink_tracker \
-  < migrations/add-extension-submission-tracking.sql
-```
-
-If you need to run manual database operations:
-
-```bash
-# Connect to the PostgreSQL container
-docker exec -it backlink-postgres psql -U backlink_user -d backlink_tracker
-
-# View data
-\dt  -- List tables
-SELECT COUNT(*) FROM websites;
-SELECT COUNT(*) FROM resources;
-SELECT COUNT(*) FROM backlinks;
-
-# Reset database (if needed)
-DROP SCHEMA public CASCADE;
-CREATE SCHEMA public;
-\i /docker-entrypoint-initdb.d/01-schema.sql
-\i /docker-entrypoint-initdb.d/02-seed.sql
-```
-
-### Backup and Restore
-
-```bash
-# Backup
-docker exec backlink-postgres pg_dump -U backlink_user backlink_tracker > backup.sql
-
-# Restore
-docker exec -i backlink-postgres psql -U backlink_user backlink_tracker < backup.sql
-```
-
-## Monitoring and Maintenance
-
-### Health Checks
-
-The application includes built-in health checks:
-
-- **Application health:** `https://your-domain.com/api/health`
-- **Docker health checks:** Configured in docker-compose.yml
-
-### Logs
-
-View application logs:
-
-```bash
-# All services
-docker-compose logs -f
-
-# Application only
-docker-compose logs -f app
-
-# Database only
-docker-compose logs -f postgres
-```
-
-### Updates
-
-To update the application:
-
-1. **Pull latest code** (if using Git integration)
-2. **Rebuild in Dokploy** or manually:
-   ```bash
-   docker-compose down
-   docker-compose up --build -d
-   ```
-
-## Configuration
-
-### Domain Configuration
-
-1. **Update environment variables:**
-   ```bash
-   NEXTAUTH_URL=https://your-domain.com
-   ```
-
-2. **Configure Dokploy** to handle SSL and domain routing
-
-3. **Update Next.js config** if needed:
-   ```javascript
-   // next.config.js
-   images: {
-     domains: ['your-domain.com'],
-   }
-   ```
-
-### Scaling
-
-For higher loads, you can scale the application:
-
-```bash
-# Scale application instances
-docker-compose up --scale app=3
-```
-
-Note: Database should remain as single instance for data consistency.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Database connection errors:**
-   - Check DATABASE_URL format
-   - Ensure PostgreSQL container is healthy
-   - Verify network connectivity between containers
-
-2. **Environment variables not loading:**
-   - Check .env file syntax
-   - Ensure variables are properly set in Dokploy
-   - Restart containers after changes
-
-3. **Build failures:**
-   - Check Docker logs: `docker-compose logs app`
-   - Verify all dependencies in package.json
-   - Ensure sufficient disk space
-
-4. **Permission issues:**
-   - Check file ownership in containers
-   - Verify PostgreSQL data directory permissions
-
-### Debug Commands
-
-```bash
-# Check container status
-docker-compose ps
-
-# Inspect container configuration
-docker inspect backlink-app
-docker inspect backlink-postgres
-
-# Test database connectivity
-docker exec backlink-postgres pg_isready -U backlink_user
-
-# Check application health
-curl http://localhost:3000/api/health
-```
-
-## Security Considerations
-
-1. **Use strong passwords** for database and NextAuth secret
-2. **Enable SSL/HTTPS** in production
-3. **Regular backups** of database
-4. **Keep containers updated** with security patches
-5. **Limit database access** to application containers only
-6. **Monitor logs** for suspicious activity
-
-## Support
-
-If you encounter issues:
-
-1. Check the logs first: `docker-compose logs`
-2. Verify environment configuration
-3. Test database connectivity
-4. Review Dokploy deployment logs
-
-The application includes comprehensive error handling and logging to help diagnose issues quickly.
-
-### Extension smart fill
-
-Deploy the `/api/extension/smart-fill` route with `BACKLINK_EXTENSION_TOKEN`,
-`TYPESAFE_API_KEY`, and the existing `OPENAI_API_KEY`. Optional overrides are
-`TYPESAFE_MODEL` (default `jev-latest`) and `OPENAI_CONTENT_MODEL` (existing default
-`gpt-5-nano`). No database migration is required. The route only reads the selected
-website profile; it does not write submission history. Allow up to 120 seconds for
-this request on the hosting platform. Reload the Chrome extension after deploying
-the matching backend. The Codex Skill's local credential file is not read by this
-service. Test with a public sample form before using real submission pages.
+Do not create another database or rerun the data import on an existing database.
+Jev smart fill is optional and was excluded from the migration on 2026-10-08;
+`TYPESAFE_API_KEY` is not required for website management, extension workspace
+sync, operations history or the partner-link API.
+
+After deployment verify `/api/health` reports `database: "d1"`, the website and
+resource pages load, authenticated workspace/operations reads succeed, and
+unauthenticated workspace/operations reads return 401. Check partner links
+for each product. Do not submit directories or create operations tasks as tests.
+
+## Data and rollback
+
+The 2026-10-08 migration preserves IDs, manual reviews, submission histories,
+84 partner links and 43 historical reports. Reports are stored in bounded
+`backlink_report_parts`; the API reconstructs the original JSON. Duplicate
+legacy resource domains are preserved to avoid losing submission history.
+
+A private PostgreSQL snapshot and pre-cutover DNS record are retained under
+`.private/d1-migration/` in the local workspace, excluded from Git and build
+contexts. `tools/import-d1.mjs` prepares SQL from that snapshot for a **new,
+empty** D1 database. The old `migrations/` SQL and Docker files are historical
+PostgreSQL artifacts; they are not the current deployment path.
+
+The original Vercel deployment and Hetzner database are retained. The former
+DNS record was proxied CNAME `backlink.actone.app` →
+`backlink-tracker-theta.vercel.app` (TTL Auto). To roll back, first preserve any
+new D1 writes and reconcile them; then remove the Worker hostname route, verify the retained DNS record and
+restore the old application's restricted database access.
+Do not silently revert to a stale PostgreSQL copy.
+
+Production deploys now use Wrangler. Pushing the old Vercel Git integration is
+not a Cloudflare release. Publish only `apps/web` to the original web remote;
+never push the combined monorepo history to either split remote.

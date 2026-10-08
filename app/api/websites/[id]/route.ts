@@ -114,7 +114,7 @@ export async function PUT(
     }
 
     // Add updated_at
-    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    fields.push(`updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`);
 
     const sql = `
       UPDATE websites 
@@ -196,7 +196,7 @@ export async function DELETE(
     // Soft delete - set is_active to false
     const sql = `
       UPDATE websites 
-      SET is_active = false, updated_at = CURRENT_TIMESTAMP
+      SET is_active = false, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
       WHERE id = $1 AND is_active = true
       RETURNING id;
     `;

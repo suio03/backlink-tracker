@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
     const sql = `
       INSERT INTO websites (domain, name, category, is_active, created_at, updated_at)
-      VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, true, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       RETURNING *;
     `;
 

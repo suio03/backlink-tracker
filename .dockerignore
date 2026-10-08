@@ -80,4 +80,9 @@ coverage/
 .eslintcache
 
 # Misc
-.cache/ 
+.cache/
+# Private Cloudflare and migration files
+.private/
+.wrangler/
+.open-next/
+.dev.vars*

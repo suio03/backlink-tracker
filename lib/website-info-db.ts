@@ -3,7 +3,7 @@
  * Replaces the JSON file approach for production compatibility
  */
 
-import { query } from '@/lib/database';
+import { query, batch } from '@/lib/database';
 import { WebsiteExtendedInfo } from '@/types';
 
 // Read all website extended info
@@ -82,7 +82,7 @@ export async function saveWebsiteInfo(websiteInfo: Omit<WebsiteExtendedInfo, 'la
   try {
     const sql = `
       INSERT INTO website_extended_info (website_id, support_email, title, short_description, description, url, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       ON CONFLICT (website_id) DO UPDATE SET
         support_email = EXCLUDED.support_email,
         title = EXCLUDED.title,
@@ -130,12 +130,12 @@ export async function deleteWebsiteInfo(websiteId: number): Promise<boolean> {
 export async function bulkSaveWebsiteInfo(websiteInfoList: Omit<WebsiteExtendedInfo, 'lastUpdated'>[]): Promise<boolean> {
   try {
     // Use a transaction for bulk operations
-    await query('BEGIN');
+    const statements: {sql:string;params:unknown[]}[] = [];
     
     for (const websiteInfo of websiteInfoList) {
       const sql = `
         INSERT INTO website_extended_info (website_id, support_email, title, short_description, description, url, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, $4, $5, $6, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
         ON CONFLICT (website_id) DO UPDATE SET
           support_email = EXCLUDED.support_email,
           title = EXCLUDED.title,
@@ -145,20 +145,19 @@ export async function bulkSaveWebsiteInfo(websiteInfoList: Omit<WebsiteExtendedI
           updated_at = EXCLUDED.updated_at;
       `;
 
-      await query(sql, [
+      statements.push({sql, params: [
         websiteInfo.websiteId,
         websiteInfo.supportEmail || null,
         websiteInfo.title || null,
         websiteInfo.shortDescription || null,
         websiteInfo.description || null,
         websiteInfo.url || null
-      ]);
+      ]});
     }
     
-    await query('COMMIT');
+    await batch(statements);
     return true;
   } catch (error) {
-    await query('ROLLBACK');
     console.error('Error bulk saving website info to database:', error);
     return false;
   }

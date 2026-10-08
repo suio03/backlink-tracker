@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-08
+### Changed
+- Run the web application on Cloudflare Workers through OpenNext, with D1 replacing the PostgreSQL connection.
+- Preserve workspace IDs, manual decisions, submission histories and archived operations reports; split large report payloads into bounded D1 rows.
+- Apply workspace changes atomically with conflict detection and retries.
+- Keep Jev smart fill optional and excluded from migration requirements.
+
+### Added
+- D1 schema and private snapshot import tooling, Worker deployment configuration and a database-backed health check.
+- Isolated workerd tests for data integrity, concurrent writes, rollback, large reports and HTTP compatibility.
+
 ## 2026-09-12
 ### Fixed
 - Website descriptions, short descriptions, and categories preserve Markdown line breaks, indentation, blank lines, and hard breaks when saved through the extension API.

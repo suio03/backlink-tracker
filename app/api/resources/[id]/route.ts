@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/database';
+import { mutateState } from '@/lib/d1-workspace-store';
 
 export async function GET(
   request: Request,
@@ -179,7 +180,7 @@ export async function PUT(
     }
 
     // Add updated_at
-    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+    fields.push(`updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`);
 
     const sql = `
       UPDATE resources 
@@ -262,47 +263,16 @@ export async function DELETE(
       );
     }
     
-    // Use a transaction to ensure both operations succeed or fail together
-    await query('BEGIN');
-    
-    try {
-      // First, delete all backlinks associated with this resource
-      const deleteBacklinksResult = await query(
-        'DELETE FROM backlinks WHERE resource_id = $1 RETURNING id',
-        [resourceId]
-      );
-      
-      // Then, soft delete the resource
-      const deleteResourceResult = await query(
-        'UPDATE resources SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND is_active = true RETURNING id',
-        [resourceId]
-      );
-      
-      if (deleteResourceResult.rows.length === 0) {
-        await query('ROLLBACK');
-        return NextResponse.json(
-          {
-            success: false,
-            message: 'Resource not found'
-          },
-          { status: 404 }
-        );
-      }
-      
-      await query('COMMIT');
-      
-      const deletedBacklinksCount = deleteBacklinksResult.rows.length;
-      
-      return NextResponse.json({
-        success: true,
-        message: `Resource deleted successfully. Removed ${deletedBacklinksCount} backlink tracking entries from all websites.`
-      });
-      
-    } catch (transactionError) {
-      await query('ROLLBACK');
-      throw transactionError;
-    }
-    
+    const result = await mutateState(state=>{
+      const resource=state.table('resources').find(r=>r.id===resourceId&&r.is_active);
+      if(!resource)return null;
+      const count=state.table('backlinks').filter(r=>r.resource_id===resourceId).length;
+      state.remove('backlinks',r=>r.resource_id===resourceId);
+      Object.assign(resource,{is_active:false,updated_at:state.now});return count;
+    });
+    if(result===null)return NextResponse.json({success:false,message:'Resource not found'},{status:404});
+    return NextResponse.json({success:true,message:`Resource deleted successfully. Removed ${result} backlink tracking entries from all websites.`});
+
   } catch (error) {
     console.error('Error deleting resource:', error);
     

@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "backlink-desk",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "account_id": "9955b1e01b98cb8e830f0543c4c002f2",
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "backlink-desk",
+      "database_id": "f4fbd66a-0c17-43bf-a6c4-8718d8a8acef",
+      "migrations_dir": "d1-migrations",
+    },
+  ],
+  "routes": [{ "pattern": "backlink.actone.app/*", "zone_name": "actone.app" }],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": { "OPENAI_CONTENT_MODEL": "gpt-5-nano" },
+}

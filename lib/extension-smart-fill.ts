@@ -105,7 +105,7 @@ export function readChoice(raw: unknown, criteria: Record<string, string>) {
 }
 async function callJSON(url: string, key: string, body: unknown, timeoutMs: number, provider: string) {
   try {
-    const response = await fetch(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await fetch(url, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!response.ok) throw new SmartFillServiceError(`${provider} 请求失败（HTTP ${response.status}）。`);
     return record(await response.json());
   } catch (error) {
@@ -204,7 +204,7 @@ export async function generateSmartFill(raw: unknown) {
   if (!Number.isSafeInteger(websiteId) || websiteId <= 0) throw new SmartFillInputError('请选择有效的推广网站。');
   const fields = normalizeSmartFields(record(input.page).fields);
   const result = await query(`SELECT w.name, w.domain, w.category, i.title, i.description,
-    COALESCE(to_jsonb(i)->>'short_description', '') AS short_description, i.url, i.support_email
+    COALESCE(i.short_description, '') AS short_description, i.url, i.support_email
     FROM websites w LEFT JOIN website_extended_info i ON i.website_id = w.id
     WHERE w.id = $1 AND w.is_active = TRUE`, [websiteId]);
   if (!result.rowCount) throw new SmartFillInputError('推广网站不存在或已停用。');

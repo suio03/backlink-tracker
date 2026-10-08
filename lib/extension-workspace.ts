@@ -1,5 +1,10 @@
-import type { PoolClient } from 'pg';
-import { query, transaction } from '@/lib/database';
+import {
+  readState,
+  mutateState,
+  type WorkspaceState,
+  type Table,
+} from "@/lib/d1-workspace-store";
+import type { Row } from "@/lib/database";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,7 +35,7 @@ export interface OpportunityDecisionPayload {
 export class ProspectReportInputError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'ProspectReportInputError';
+    this.name = "ProspectReportInputError";
   }
 }
 
@@ -39,51 +44,49 @@ export class OpportunityDecisionInputError extends Error {
 
   constructor(message: string, status = 400) {
     super(message);
-    this.name = 'OpportunityDecisionInputError';
+    this.name = "OpportunityDecisionInputError";
     this.status = status;
   }
 }
 
 const VALID_PROSPECT_STATUSES = new Set([
-  'pending',
-  'can_add',
-  'login_required',
-  'paid',
-  'later',
+  "pending",
+  "can_add",
+  "login_required",
+  "paid",
+  "later",
 ]);
 const VALID_SCREENING_WRITE_STATUSES = new Set([
-  'screened',
-  'needs_review',
-  'fetch_failed',
+  "screened",
+  "needs_review",
+  "fetch_failed",
 ]);
 const VALID_SCREENING_CATEGORIES = new Set([
-  'direct_submit',
-  'guest_post',
-  'paid_or_contact',
-  'possible',
-  'no_obvious_opportunity',
+  "direct_submit",
+  "guest_post",
+  "paid_or_contact",
+  "possible",
+  "no_obvious_opportunity",
 ]);
-const VALID_SCREENING_COSTS = new Set(['unknown', 'free', 'paid', 'mixed']);
+const VALID_SCREENING_COSTS = new Set(["unknown", "free", "paid", "mixed"]);
 const VALID_SUBMISSION_STATUSES = new Set([
-  'pending',
-  'requested',
-  'placed',
-  'live',
-  'rejected',
-  'removed',
+  "pending",
+  "requested",
+  "placed",
+  "live",
+  "rejected",
+  "removed",
 ]);
-const VALID_OPPORTUNITY_DECISIONS = new Set([
-  'confirm',
-  'exclude',
-  'restore',
-]);
+const VALID_OPPORTUNITY_DECISIONS = new Set(["confirm", "exclude", "restore"]);
 
 function text(value: unknown): string {
-  return String(value ?? '').replace(/\s+/g, ' ').trim();
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function markdownText(value: unknown): string {
-  return String(value ?? '').replace(/\r\n?/g, '\n');
+  return String(value ?? "").replace(/\r\n?/g, "\n");
 }
 
 function number(value: unknown, fallback = 0): number {
@@ -92,7 +95,7 @@ function number(value: unknown, fallback = 0): number {
 }
 
 function nullableNumber(value: unknown): number | null {
-  if (value === '' || value === null || value === undefined) return null;
+  if (value === "" || value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -111,45 +114,48 @@ function normalizeScreeningDate(value: unknown): string | null {
 
 function normalizeDomain(value: unknown): string {
   const candidate = text(value);
-  if (!candidate) return '';
+  if (!candidate) return "";
   try {
     const url = new URL(
       /^[a-z][a-z\d+.-]*:\/\//i.test(candidate)
         ? candidate
         : `https://${candidate}`,
     );
-    return ['http:', 'https:'].includes(url.protocol)
-      ? url.hostname.toLowerCase().replace(/^www\./, '').replace(/\.$/, '')
-      : '';
+    return ["http:", "https:"].includes(url.protocol)
+      ? url.hostname
+          .toLowerCase()
+          .replace(/^www\./, "")
+          .replace(/\.$/, "")
+      : "";
   } catch {
-    return '';
+    return "";
   }
 }
 
 function normalizeHttpUrl(value: unknown): string {
   const candidate = text(value);
-  if (!candidate) return '';
+  if (!candidate) return "";
   try {
     const url = new URL(candidate);
-    return ['http:', 'https:'].includes(url.protocol) &&
+    return ["http:", "https:"].includes(url.protocol) &&
       !url.username &&
       !url.password
       ? url.toString()
-      : '';
+      : "";
   } catch {
-    return '';
+    return "";
   }
 }
 
 function normalizeScreeningEvidence(value: unknown): JsonRecord[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 20).reduce<JsonRecord[]>((normalized, item) => {
-    if (typeof item === 'string') {
+    if (typeof item === "string") {
       const evidenceText = text(item).slice(0, 500);
       if (evidenceText) normalized.push({ text: evidenceText });
       return normalized;
     }
-    if (!item || typeof item !== 'object') return normalized;
+    if (!item || typeof item !== "object") return normalized;
     const record = item as JsonRecord;
     const evidence = {
       type: text(record.type ?? record.kind).slice(0, 80),
@@ -165,7 +171,7 @@ function normalizeScreeningEvidence(value: unknown): JsonRecord[] {
 function normalizeSubmissionHistory(value: unknown): JsonRecord[] {
   if (!Array.isArray(value)) return [];
   return value.slice(-100).reduce<JsonRecord[]>((normalized, item) => {
-    if (!item || typeof item !== 'object') return normalized;
+    if (!item || typeof item !== "object") return normalized;
     const record = item as JsonRecord;
     const status = text(record.status);
     if (!VALID_SUBMISSION_STATUSES.has(status)) return normalized;
@@ -181,15 +187,15 @@ function normalizeSubmissionHistory(value: unknown): JsonRecord[] {
 
 function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
   if (!Array.isArray(payload?.results)) {
-    throw new ProspectReportInputError('Screening results are required');
+    throw new ProspectReportInputError("Screening results are required");
   }
   if (payload.results.length > 250) {
-    throw new ProspectReportInputError('Screening batch exceeds 250 results');
+    throw new ProspectReportInputError("Screening batch exceeds 250 results");
   }
 
   const byDomain = new Map<string, JsonRecord>();
   for (const value of payload.results) {
-    if (!value || typeof value !== 'object') continue;
+    if (!value || typeof value !== "object") continue;
     const record = value as JsonRecord;
     const rootDomain = normalizeDomain(record.rootDomain ?? record.root_domain);
     const screeningStatus = text(
@@ -204,7 +210,7 @@ function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
     const screeningCategory = VALID_SCREENING_CATEGORIES.has(requestedCategory)
       ? requestedCategory
       : null;
-    if (screeningStatus !== 'fetch_failed' && !screeningCategory) continue;
+    if (screeningStatus !== "fetch_failed" && !screeningCategory) continue;
     const requestedConfidence = nullableNumber(
       record.screeningConfidence ?? record.screening_confidence,
     );
@@ -215,7 +221,7 @@ function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
     const requestedCost = text(record.screeningCost ?? record.screening_cost);
     const screeningCost = VALID_SCREENING_COSTS.has(requestedCost)
       ? requestedCost
-      : 'unknown';
+      : "unknown";
     byDomain.set(rootDomain, {
       rootDomain,
       screeningStatus,
@@ -245,18 +251,21 @@ function normalizeProspectScreeningPayload(payload: ProspectScreeningPayload) {
 function normalizeProspectReport(payload: ProspectReportPayload) {
   const sourceDomain = normalizeDomain(payload?.sourceDomain);
   if (!sourceDomain) {
-    throw new ProspectReportInputError('A valid source domain is required');
+    throw new ProspectReportInputError("A valid source domain is required");
   }
   if (!Array.isArray(payload?.records)) {
-    throw new ProspectReportInputError('Report records are required');
+    throw new ProspectReportInputError("Report records are required");
   }
   if (payload.records.length > 100_000) {
-    throw new ProspectReportInputError('Report exceeds the 100,000 row limit');
+    throw new ProspectReportInputError("Report exceeds the 100,000 row limit");
   }
 
-  const byDomain = new Map<string, { rootDomain: string; authority: number | null }>();
+  const byDomain = new Map<
+    string,
+    { rootDomain: string; authority: number | null }
+  >();
   for (const value of payload.records) {
-    if (!value || typeof value !== 'object') continue;
+    if (!value || typeof value !== "object") continue;
     const record = value as JsonRecord;
     const rootDomain = normalizeDomain(record.domain ?? record.rootDomain);
     if (!rootDomain) continue;
@@ -273,13 +282,13 @@ function normalizeProspectReport(payload: ProspectReportPayload) {
   }
   const normalized = [...byDomain.values()];
   if (!normalized.length) {
-    throw new ProspectReportInputError('Report contains no valid domains');
+    throw new ProspectReportInputError("Report contains no valid domains");
   }
   return { sourceDomain, records: normalized };
 }
 
 function boolean(value: unknown, fallback = true): boolean {
-  return typeof value === 'boolean' ? value : fallback;
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function numericId(value: unknown): number | null {
@@ -292,7 +301,7 @@ function numericId(value: unknown): number | null {
 function records(value: unknown): JsonRecord[] {
   return Array.isArray(value)
     ? value.filter(
-        (item): item is JsonRecord => Boolean(item) && typeof item === 'object',
+        (item): item is JsonRecord => Boolean(item) && typeof item === "object",
       )
     : [];
 }
@@ -307,30 +316,30 @@ function serializeProspect(row: JsonRecord) {
     as: row.authority,
     csvFileCount: row.csv_file_count,
     sourceCount: Number(row.source_count) || 0,
-    sourceFiles: row.source_files || '',
+    sourceFiles: row.source_files || "",
     status: row.status,
-    submissionUrl: row.submission_url || '',
-    notes: row.notes || '',
+    submissionUrl: row.submission_url || "",
+    notes: row.notes || "",
     excluded: row.excluded,
-    excludedAt: row.excluded_at || '',
-    excludedReason: row.excluded_reason || '',
-    lastOpenedAt: row.last_opened_at || '',
-    lastImportedAt: row.last_imported_at || '',
-    lastSeenAt: row.last_seen_at || '',
-    screeningStatus: row.screening_status || 'unscreened',
-    screeningCategory: row.screening_category || '',
+    excludedAt: row.excluded_at || "",
+    excludedReason: row.excluded_reason || "",
+    lastOpenedAt: row.last_opened_at || "",
+    lastImportedAt: row.last_imported_at || "",
+    lastSeenAt: row.last_seen_at || "",
+    screeningStatus: row.screening_status || "unscreened",
+    screeningCategory: row.screening_category || "",
     screeningConfidence:
       row.screening_confidence === null
         ? null
         : Number(row.screening_confidence),
-    screeningCost: row.screening_cost || 'unknown',
-    screeningEntryUrl: row.screening_entry_url || '',
-    screeningSummary: row.screening_summary || '',
+    screeningCost: row.screening_cost || "unknown",
+    screeningEntryUrl: row.screening_entry_url || "",
+    screeningSummary: row.screening_summary || "",
     screeningEvidence: Array.isArray(row.screening_evidence)
       ? row.screening_evidence
       : [],
-    screeningRuleset: row.screening_ruleset || '',
-    screenedAt: row.screened_at || '',
+    screeningRuleset: row.screening_ruleset || "",
+    screenedAt: row.screened_at || "",
     importOrder: row.import_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -342,11 +351,11 @@ function serializeResource(row: JsonRecord) {
     id: String(row.id),
     domain: row.domain,
     url: row.url,
-    contactEmail: row.contact_email || '',
+    contactEmail: row.contact_email || "",
     authority: Number(row.domain_authority) || 0,
     category: row.category,
     cost: Number(row.cost) || 0,
-    notes: row.notes || '',
+    notes: row.notes || "",
     active: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -359,44 +368,68 @@ function serializeSubmission(row: JsonRecord) {
     websiteId: String(row.website_id),
     resourceId: String(row.resource_id),
     status: row.status,
-    anchorText: row.anchor_text || '',
-    targetUrl: row.target_url || '',
-    submissionUrl: row.submission_url || '',
-    liveUrl: row.live_url || '',
-    submittedAt: row.submitted_at || '',
-    lastCheckedAt: row.last_checked_at || '',
+    anchorText: row.anchor_text || "",
+    targetUrl: row.target_url || "",
+    submissionUrl: row.submission_url || "",
+    liveUrl: row.live_url || "",
+    submittedAt: row.submitted_at || "",
+    lastCheckedAt: row.last_checked_at || "",
     statusHistory: Array.isArray(row.status_history) ? row.status_history : [],
-    placementDate: row.placement_date || '',
-    removalDate: row.removal_date || '',
+    placementDate: row.placement_date || "",
+    removalDate: row.removal_date || "",
     cost: Number(row.cost) || 0,
-    notes: row.notes || '',
+    notes: row.notes || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-async function loadWithClient(client: PoolClient | null = null) {
-  const run = (sql: string, params?: unknown[]) =>
-    client ? client.query(sql, params) : query(sql, params);
-  const [websites, resources, submissions, prospects, workflows] = await Promise.all([
-    run(`
-      SELECT
-        w.*,
-        i.support_email,
-        i.title,
-        i.description,
-        i.url AS product_url,
-        COALESCE(to_jsonb(i)->>'short_description', '') AS short_description
-      FROM websites w
-      LEFT JOIN website_extended_info i ON i.website_id = w.id
-      ORDER BY w.id
-    `),
-    run('SELECT * FROM resources ORDER BY id'),
-    run('SELECT * FROM backlinks ORDER BY id'),
-    run('SELECT * FROM extension_prospects ORDER BY import_order, root_domain'),
-    run('SELECT * FROM extension_form_workflows ORDER BY resource_id'),
-  ]);
-
+export function workspaceFromState(state: WorkspaceState) {
+  const websites = {
+    rows: state
+      .table("websites")
+      .map(
+        (w): Row => ({
+          ...w,
+          ...Object.fromEntries(
+            Object.entries(
+              state
+                .table("website_extended_info")
+                .find((i) => i.website_id === w.id) || {},
+            ).filter(([k]) =>
+              [
+                "support_email",
+                "title",
+                "description",
+                "short_description",
+              ].includes(k),
+            ),
+          ),
+          product_url: state
+            .table("website_extended_info")
+            .find((i) => i.website_id === w.id)?.url,
+        }),
+      )
+      .sort((a, b) => a.id - b.id),
+  };
+  const resources = {
+    rows: [...state.table("resources")].sort((a, b) => a.id - b.id),
+  };
+  const submissions = {
+    rows: [...state.table("backlinks")].sort((a, b) => a.id - b.id),
+  };
+  const prospects = {
+    rows: [...state.table("extension_prospects")].sort(
+      (a, b) =>
+        a.import_order - b.import_order ||
+        a.root_domain.localeCompare(b.root_domain),
+    ),
+  };
+  const workflows = {
+    rows: [...state.table("extension_form_workflows")].sort(
+      (a, b) => a.resource_id - b.resource_id,
+    ),
+  };
   const queue = prospects.rows
     .filter((row) => !row.excluded && row.queue_position !== null)
     .sort((a, b) => Number(a.queue_position) - Number(b.queue_position))
@@ -405,7 +438,7 @@ async function loadWithClient(client: PoolClient | null = null) {
   return {
     schemaVersion: 1,
     meta: {
-      source: 'backlink-tracker-postgresql',
+      source: "backlink-desk-d1",
       updatedAt: new Date().toISOString(),
     },
     prospects: prospects.rows.map((row) => ({
@@ -413,30 +446,30 @@ async function loadWithClient(client: PoolClient | null = null) {
       as: row.authority,
       csvFileCount: row.csv_file_count,
       sourceCount: Number(row.source_count) || 0,
-      sourceFiles: row.source_files || '',
+      sourceFiles: row.source_files || "",
       status: row.status,
-      submissionUrl: row.submission_url || '',
-      notes: row.notes || '',
+      submissionUrl: row.submission_url || "",
+      notes: row.notes || "",
       excluded: row.excluded,
-      excludedAt: row.excluded_at || '',
-      excludedReason: row.excluded_reason || '',
-      lastOpenedAt: row.last_opened_at || '',
-      lastImportedAt: row.last_imported_at || '',
-      lastSeenAt: row.last_seen_at || '',
-      screeningStatus: row.screening_status || 'unscreened',
-      screeningCategory: row.screening_category || '',
+      excludedAt: row.excluded_at || "",
+      excludedReason: row.excluded_reason || "",
+      lastOpenedAt: row.last_opened_at || "",
+      lastImportedAt: row.last_imported_at || "",
+      lastSeenAt: row.last_seen_at || "",
+      screeningStatus: row.screening_status || "unscreened",
+      screeningCategory: row.screening_category || "",
       screeningConfidence:
         row.screening_confidence === null
           ? null
           : Number(row.screening_confidence),
-      screeningCost: row.screening_cost || 'unknown',
-      screeningEntryUrl: row.screening_entry_url || '',
-      screeningSummary: row.screening_summary || '',
+      screeningCost: row.screening_cost || "unknown",
+      screeningEntryUrl: row.screening_entry_url || "",
+      screeningSummary: row.screening_summary || "",
       screeningEvidence: Array.isArray(row.screening_evidence)
         ? row.screening_evidence
         : [],
-      screeningRuleset: row.screening_ruleset || '',
-      screenedAt: row.screened_at || '',
+      screeningRuleset: row.screening_ruleset || "",
+      screenedAt: row.screened_at || "",
       importOrder: row.import_order,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -447,10 +480,10 @@ async function loadWithClient(client: PoolClient | null = null) {
       domain: row.domain,
       name: row.name,
       category: row.category,
-      supportEmail: row.support_email || '',
-      title: row.title || '',
-      shortDescription: row.short_description || '',
-      description: row.description || '',
+      supportEmail: row.support_email || "",
+      title: row.title || "",
+      shortDescription: row.short_description || "",
+      description: row.description || "",
       url: row.product_url || `https://${row.domain}`,
       active: row.is_active,
       createdAt: row.created_at,
@@ -460,11 +493,11 @@ async function loadWithClient(client: PoolClient | null = null) {
       id: String(row.id),
       domain: row.domain,
       url: row.url,
-      contactEmail: row.contact_email || '',
+      contactEmail: row.contact_email || "",
       authority: Number(row.domain_authority) || 0,
       category: row.category,
       cost: Number(row.cost) || 0,
-      notes: row.notes || '',
+      notes: row.notes || "",
       active: row.is_active,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -474,17 +507,19 @@ async function loadWithClient(client: PoolClient | null = null) {
       websiteId: String(row.website_id),
       resourceId: String(row.resource_id),
       status: row.status,
-      anchorText: row.anchor_text || '',
-      targetUrl: row.target_url || '',
-      submissionUrl: row.submission_url || '',
-      liveUrl: row.live_url || '',
-      submittedAt: row.submitted_at || '',
-      lastCheckedAt: row.last_checked_at || '',
-      statusHistory: Array.isArray(row.status_history) ? row.status_history : [],
-      placementDate: row.placement_date || '',
-      removalDate: row.removal_date || '',
+      anchorText: row.anchor_text || "",
+      targetUrl: row.target_url || "",
+      submissionUrl: row.submission_url || "",
+      liveUrl: row.live_url || "",
+      submittedAt: row.submitted_at || "",
+      lastCheckedAt: row.last_checked_at || "",
+      statusHistory: Array.isArray(row.status_history)
+        ? row.status_history
+        : [],
+      placementDate: row.placement_date || "",
+      removalDate: row.removal_date || "",
       cost: Number(row.cost) || 0,
-      notes: row.notes || '',
+      notes: row.notes || "",
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })),
@@ -502,755 +537,429 @@ async function loadWithClient(client: PoolClient | null = null) {
   };
 }
 
-export async function loadExtensionWorkspace(client: PoolClient | null = null) {
-  return loadWithClient(client);
+export async function loadExtensionWorkspace() {
+  return workspaceFromState(await readState());
 }
-
+const same = (a: unknown, b: unknown) => String(a) === String(b);
+const nextOrder = (s: WorkspaceState) =>
+  Math.max(
+    -1,
+    ...s.table("extension_prospects").map((r) => Number(r.import_order) || 0),
+  ) + 1;
+function patchRow(
+  state: WorkspaceState,
+  table: Table,
+  row: Row | undefined,
+  values: Row,
+): Row {
+  if (row) {
+    Object.assign(row, values, { updated_at: state.now });
+    return row;
+  }
+  return state.insert(table, values);
+}
 export async function importExtensionProspectReport(
   payload: ProspectReportPayload,
 ) {
   const report = normalizeProspectReport(payload);
-  const rootDomains = report.records.map((record) => record.rootDomain);
-
-  return transaction(async (client) => {
-    const existing = await client.query(
-      'SELECT root_domain FROM extension_prospects WHERE root_domain = ANY($1::text[])',
-      [rootDomains],
-    );
-    const existingDomains = new Set(
-      existing.rows.map((row) => String(row.root_domain)),
-    );
-    const serialized = JSON.stringify(
-      report.records.map((record) => ({
-        root_domain: record.rootDomain,
-        authority: record.authority,
-      })),
-    );
-
-    await client.query(
-      `
-        WITH incoming AS (
-          SELECT
-            row.root_domain,
-            row.authority,
-            (ROW_NUMBER() OVER (ORDER BY row.root_domain) - 1)::INTEGER AS order_offset
-          FROM jsonb_to_recordset($1::jsonb)
-            AS row(root_domain TEXT, authority INTEGER)
-        ),
-        base_order AS (
-          SELECT COALESCE(MAX(import_order), -1) + 1 AS next_order
-          FROM extension_prospects
-        ),
-        upserted AS (
-          INSERT INTO extension_prospects (
-            root_domain, authority, source_count, status, last_imported_at,
-            last_seen_at, import_order, created_at, updated_at
-          )
-          SELECT
-            incoming.root_domain,
-            incoming.authority,
-            0,
-            'pending',
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP,
-            base_order.next_order + incoming.order_offset,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP
-          FROM incoming
-          CROSS JOIN base_order
-          ON CONFLICT (root_domain) DO UPDATE SET
-            authority = CASE
-              WHEN extension_prospects.authority IS NULL THEN EXCLUDED.authority
-              WHEN EXCLUDED.authority IS NULL THEN extension_prospects.authority
-              ELSE GREATEST(extension_prospects.authority, EXCLUDED.authority)
-            END,
-            last_imported_at = CURRENT_TIMESTAMP,
-            last_seen_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-          RETURNING root_domain
-        )
-        INSERT INTO extension_prospect_sources (
-          root_domain, source_domain, authority, first_seen_at, last_seen_at
-        )
-        SELECT upserted.root_domain, $2, incoming.authority,
-          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-        FROM upserted
-        JOIN incoming USING (root_domain)
-        ON CONFLICT (root_domain, source_domain) DO UPDATE SET
-          authority = CASE
-            WHEN extension_prospect_sources.authority IS NULL THEN EXCLUDED.authority
-            WHEN EXCLUDED.authority IS NULL THEN extension_prospect_sources.authority
-            ELSE GREATEST(extension_prospect_sources.authority, EXCLUDED.authority)
-          END,
-          last_seen_at = CURRENT_TIMESTAMP
-      `,
-      [serialized, report.sourceDomain],
-    );
-
-    await client.query(
-      `
-        UPDATE extension_prospects AS prospect
-        SET source_count = source.source_count,
-            updated_at = CURRENT_TIMESTAMP
-        FROM (
-          SELECT root_domain, COUNT(*)::INTEGER AS source_count
-          FROM extension_prospect_sources
-          WHERE root_domain = ANY($1::text[])
-          GROUP BY root_domain
-        ) AS source
-        WHERE prospect.root_domain = source.root_domain
-      `,
-      [rootDomains],
-    );
-
+  return mutateState((state) => {
+    let added = 0;
+    let order = nextOrder(state);
+    for (const record of [...report.records].sort((a, b) =>
+      a.rootDomain.localeCompare(b.rootDomain),
+    )) {
+      let row = state
+        .table("extension_prospects")
+        .find((p) => p.root_domain === record.rootDomain);
+      if (!row) {
+        row = state.insert("extension_prospects", {
+          root_domain: record.rootDomain,
+          authority: record.authority,
+          import_order: order++,
+        });
+        added++;
+      } else if (record.authority !== null)
+        row.authority =
+          row.authority === null
+            ? record.authority
+            : Math.max(row.authority, record.authority);
+      Object.assign(row, {
+        last_imported_at: state.now,
+        last_seen_at: state.now,
+        updated_at: state.now,
+      });
+      const source = state
+        .table("extension_prospect_sources")
+        .find(
+          (r) =>
+            r.root_domain === record.rootDomain &&
+            r.source_domain === report.sourceDomain,
+        );
+      if (source) {
+        if (record.authority !== null)
+          source.authority =
+            source.authority === null
+              ? record.authority
+              : Math.max(source.authority, record.authority);
+        source.last_seen_at = state.now;
+      } else
+        state.insert("extension_prospect_sources", {
+          root_domain: record.rootDomain,
+          source_domain: report.sourceDomain,
+          authority: record.authority,
+        });
+      row.source_count = state
+        .table("extension_prospect_sources")
+        .filter((r) => r.root_domain === record.rootDomain).length;
+    }
     return {
-      workspace: await loadWithClient(client),
+      workspace: workspaceFromState(state),
       summary: {
         sourceDomain: report.sourceDomain,
-        added: report.records.length - existingDomains.size,
-        existing: existingDomains.size,
+        added,
+        existing: report.records.length - added,
         total: report.records.length,
       },
     };
   });
 }
-
 export async function applyProspectScreeningResults(
   payload: ProspectScreeningPayload,
 ) {
   const results = normalizeProspectScreeningPayload(payload);
-  if (!results.length) {
-    throw new ProspectReportInputError('Screening batch contains no valid results');
-  }
-  const serialized = JSON.stringify(
-    results.map((result) => ({
-      root_domain: result.rootDomain,
-      screening_status: result.screeningStatus,
-      screening_category: result.screeningCategory,
-      screening_confidence: result.screeningConfidence,
-      screening_cost: result.screeningCost,
-      screening_entry_url: result.screeningEntryUrl || null,
-      screening_summary: result.screeningSummary || null,
-      screening_evidence: result.screeningEvidence,
-      screening_ruleset: result.screeningRuleset || null,
-      screened_at: result.screenedAt,
-    })),
-  );
-  const updated = await query(
-    `
-      WITH incoming AS (
-        SELECT *
-        FROM jsonb_to_recordset($1::jsonb) AS row(
-          root_domain TEXT,
-          screening_status TEXT,
-          screening_category TEXT,
-          screening_confidence INTEGER,
-          screening_cost TEXT,
-          screening_entry_url TEXT,
-          screening_summary TEXT,
-          screening_evidence JSONB,
-          screening_ruleset TEXT,
-          screened_at TIMESTAMPTZ
-        )
-      )
-      UPDATE extension_prospects AS prospect
-      SET screening_status = incoming.screening_status,
-          screening_category = incoming.screening_category,
-          screening_confidence = incoming.screening_confidence,
-          screening_cost = incoming.screening_cost,
-          screening_entry_url = incoming.screening_entry_url,
-          screening_summary = incoming.screening_summary,
-          screening_evidence = COALESCE(incoming.screening_evidence, '[]'::jsonb),
-          screening_ruleset = incoming.screening_ruleset,
-          screened_at = COALESCE(incoming.screened_at, CURRENT_TIMESTAMP),
-          updated_at = CURRENT_TIMESTAMP
-      FROM incoming
-      WHERE prospect.root_domain = incoming.root_domain
-      RETURNING prospect.root_domain
-    `,
-    [serialized],
-  );
-  return {
-    received: results.length,
-    updated: updated.rowCount || 0,
-    missing: results.length - (updated.rowCount || 0),
-  };
-}
-
-async function upsertProspects(client: PoolClient, values: JsonRecord[]) {
-  for (const prospect of values) {
-    const rootDomain = text(prospect.rootDomain);
-    if (!rootDomain) continue;
-    const status = text(prospect.status);
-    await client.query(
-      `
-        INSERT INTO extension_prospects (
-          root_domain, authority, csv_file_count, source_files, status,
-          submission_url, notes, excluded, excluded_at, excluded_reason,
-          last_opened_at, last_imported_at, import_order, created_at, updated_at
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-          COALESCE($14::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
-        )
-        ON CONFLICT (root_domain) DO UPDATE SET
-          authority = EXCLUDED.authority,
-          csv_file_count = EXCLUDED.csv_file_count,
-          source_files = EXCLUDED.source_files,
-          status = EXCLUDED.status,
-          submission_url = EXCLUDED.submission_url,
-          notes = EXCLUDED.notes,
-          excluded = EXCLUDED.excluded,
-          excluded_at = EXCLUDED.excluded_at,
-          excluded_reason = EXCLUDED.excluded_reason,
-          last_opened_at = EXCLUDED.last_opened_at,
-          last_imported_at = EXCLUDED.last_imported_at,
-          import_order = EXCLUDED.import_order,
-          updated_at = CURRENT_TIMESTAMP
-      `,
-      [
-        rootDomain,
-        nullableNumber(prospect.as),
-        nullableNumber(prospect.csvFileCount),
-        text(prospect.sourceFiles) || null,
-        VALID_PROSPECT_STATUSES.has(status) ? status : 'pending',
-        text(prospect.submissionUrl) || null,
-        text(prospect.notes) || null,
-        boolean(prospect.excluded, false),
-        nullableDate(prospect.excludedAt),
-        text(prospect.excludedReason) || null,
-        nullableDate(prospect.lastOpenedAt),
-        nullableDate(prospect.lastImportedAt),
-        number(prospect.importOrder),
-        nullableDate(prospect.createdAt),
-      ],
+  if (!results.length)
+    throw new ProspectReportInputError(
+      "Screening batch contains no valid results",
     );
-  }
-}
-
-async function upsertWebsite(
-  client: PoolClient,
-  website: JsonRecord,
-  idMap: Map<string, number>,
-) {
-  const sourceId = text(website.id);
-  const requestedId = numericId(sourceId);
-  const values = [
-    text(website.domain),
-    text(website.name) || text(website.domain),
-    markdownText(website.category),
-    boolean(website.active),
-    nullableDate(website.createdAt),
-  ];
-  if (!values[0]) return;
-
-  let result;
-  if (requestedId) {
-    result = await client.query(
-      `UPDATE websites SET domain = $1, name = $2, category = $3,
-       is_active = $4, created_at = COALESCE($5::timestamptz, created_at),
-       updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING id`,
-      [...values, requestedId],
-    );
-    if (!result.rowCount) {
-      result = await client.query(
-        `INSERT INTO websites (id, domain, name, category, is_active, created_at, updated_at)
-         VALUES ($6, $1, $2, $3, $4, COALESCE($5::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
-         RETURNING id`,
-        [...values, requestedId],
-      );
-    }
-  } else {
-    result = await client.query(
-      `INSERT INTO websites (domain, name, category, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
-       ON CONFLICT (domain) DO UPDATE SET name = EXCLUDED.name,
-       category = EXCLUDED.category, is_active = EXCLUDED.is_active,
-       updated_at = CURRENT_TIMESTAMP RETURNING id`,
-      values,
-    );
-  }
-  const websiteId = Number(result.rows[0].id);
-  idMap.set(sourceId, websiteId);
-  await client.query(
-    `INSERT INTO website_extended_info (
-       website_id, support_email, title, short_description, description, url,
-       created_at, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-     ON CONFLICT (website_id) DO UPDATE SET
-       support_email = EXCLUDED.support_email,
-       title = EXCLUDED.title,
-       short_description = EXCLUDED.short_description,
-       description = EXCLUDED.description,
-       url = EXCLUDED.url,
-       updated_at = CURRENT_TIMESTAMP`,
-    [
-      websiteId,
-      text(website.supportEmail) || null,
-      text(website.title) || null,
-      markdownText(website.shortDescription) || null,
-      markdownText(website.description) || null,
-      text(website.url) || null,
-    ],
-  );
-}
-
-async function upsertResource(
-  client: PoolClient,
-  resource: JsonRecord,
-  idMap: Map<string, number>,
-) {
-  const sourceId = text(resource.id);
-  const requestedId = numericId(sourceId);
-  const domain = text(resource.domain);
-  if (!domain) return;
-  const values = [
-    domain,
-    text(resource.url) || `https://${domain}`,
-    text(resource.contactEmail) || null,
-    number(resource.authority),
-    text(resource.category) || 'directory',
-    number(resource.cost),
-    text(resource.notes) || null,
-    boolean(resource.active),
-    nullableDate(resource.createdAt),
-  ];
-
-  let result;
-  if (requestedId) {
-    result = await client.query(
-      `UPDATE resources SET domain = $1, url = $2, contact_email = $3,
-       domain_authority = $4, category = $5, cost = $6, notes = $7,
-       is_active = $8, created_at = COALESCE($9::timestamptz, created_at),
-       updated_at = CURRENT_TIMESTAMP WHERE id = $10 RETURNING id`,
-      [...values, requestedId],
-    );
-    if (!result.rowCount) {
-      result = await client.query(
-        `INSERT INTO resources (
-           id, domain, url, contact_email, domain_authority, category, cost,
-           notes, is_active, created_at, updated_at
-         ) VALUES (
-           $10, $1, $2, $3, $4, $5, $6, $7, $8,
-           COALESCE($9::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
-         ) RETURNING id`,
-        [...values, requestedId],
-      );
-    }
-  } else {
-    // Legacy production databases do not have a unique constraint on domain.
-    // Serialize extension creates for the same domain, then reject duplicates
-    // instead of overwriting existing resource metadata and submission history.
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-      `extension-resource:${domain.toLowerCase()}`,
-    ]);
-    const existing = await client.query(
-      'SELECT id FROM resources WHERE lower(btrim(domain)) = lower($1) LIMIT 1',
-      [domain],
-    );
-    if (existing.rows.length) {
-      throw Object.assign(new Error('A resource with this domain already exists'), {
-        code: '23505',
+  return mutateState((state) => {
+    let updated = 0;
+    for (const result of results) {
+      const row = state
+        .table("extension_prospects")
+        .find((r) => r.root_domain === result.rootDomain);
+      if (!row) continue;
+      Object.assign(row, {
+        screening_status: result.screeningStatus,
+        screening_category: result.screeningCategory,
+        screening_confidence: result.screeningConfidence,
+        screening_cost: result.screeningCost,
+        screening_entry_url: result.screeningEntryUrl || null,
+        screening_summary: result.screeningSummary || null,
+        screening_evidence: result.screeningEvidence,
+        screening_ruleset: result.screeningRuleset || null,
+        screened_at: result.screenedAt || state.now,
+        updated_at: state.now,
       });
+      updated++;
     }
-    result = await client.query(
-      `INSERT INTO resources (
-         domain, url, contact_email, domain_authority, category, cost, notes,
-         is_active, created_at, updated_at
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8,
-         COALESCE($9::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
-       ) RETURNING id`,
-      values,
-    );
-  }
-  idMap.set(sourceId, Number(result.rows[0].id));
-}
-
-async function upsertSubmission(
-  client: PoolClient,
-  submission: JsonRecord,
-  websiteIds: Map<string, number>,
-  resourceIds: Map<string, number>,
-) {
-  const sourceId = text(submission.id);
-  const requestedId = numericId(sourceId);
-  const websiteId =
-    websiteIds.get(text(submission.websiteId)) || numericId(submission.websiteId);
-  const resourceId =
-    resourceIds.get(text(submission.resourceId)) || numericId(submission.resourceId);
-  if (!websiteId || !resourceId) return;
-  const requestedStatus = text(submission.status);
-  const values = [
-    websiteId,
-    resourceId,
-    VALID_SUBMISSION_STATUSES.has(requestedStatus) ? requestedStatus : 'pending',
-    text(submission.anchorText) || null,
-    text(submission.targetUrl) || null,
-    nullableDate(submission.placementDate),
-    nullableDate(submission.removalDate),
-    number(submission.cost),
-    text(submission.notes) || null,
-    nullableDate(submission.createdAt),
-    nullableDate(submission.submittedAt),
-    text(submission.submissionUrl) || null,
-    text(submission.liveUrl) || null,
-    nullableDate(submission.lastCheckedAt),
-    JSON.stringify(normalizeSubmissionHistory(submission.statusHistory)),
-  ];
-
-  let result;
-  if (requestedId) {
-    result = await client.query(
-      `UPDATE backlinks SET website_id = $1, resource_id = $2,
-       status = $3, anchor_text = $4, target_url = $5,
-       placement_date = $6::date, removal_date = $7::date, cost = $8,
-       notes = $9, created_at = COALESCE($10::timestamptz, created_at),
-       submitted_at = $11::timestamptz, submission_url = $12,
-       live_url = $13, last_checked_at = $14::timestamptz,
-       status_history = $15::jsonb, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $16 RETURNING id`,
-      [...values, requestedId],
-    );
-    if (!result.rowCount) {
-      result = await client.query(
-        `INSERT INTO backlinks (
-           id, website_id, resource_id, status, anchor_text, target_url,
-           placement_date, removal_date, cost, notes, created_at, submitted_at,
-           submission_url, live_url, last_checked_at, status_history, updated_at
-         ) VALUES (
-           $16, $1, $2, $3, $4, $5, $6::date, $7::date,
-           $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
-           $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
-         ) ON CONFLICT (website_id, resource_id) DO UPDATE SET
-           status = EXCLUDED.status, anchor_text = EXCLUDED.anchor_text,
-           target_url = EXCLUDED.target_url, placement_date = EXCLUDED.placement_date,
-           removal_date = EXCLUDED.removal_date, cost = EXCLUDED.cost,
-           notes = EXCLUDED.notes, submitted_at = EXCLUDED.submitted_at,
-           submission_url = EXCLUDED.submission_url, live_url = EXCLUDED.live_url,
-           last_checked_at = EXCLUDED.last_checked_at,
-           status_history = EXCLUDED.status_history,
-           updated_at = CURRENT_TIMESTAMP RETURNING id`,
-        [...values, requestedId],
-      );
-    }
-  } else {
-    await client.query(
-      `INSERT INTO backlinks (
-         website_id, resource_id, status, anchor_text, target_url,
-         placement_date, removal_date, cost, notes, created_at, submitted_at,
-         submission_url, live_url, last_checked_at, status_history, updated_at
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6::date, $7::date,
-         $8, $9, COALESCE($10::timestamptz, CURRENT_TIMESTAMP), $11::timestamptz,
-         $12, $13, $14::timestamptz, $15::jsonb, CURRENT_TIMESTAMP
-       ) ON CONFLICT (website_id, resource_id) DO UPDATE SET
-         status = EXCLUDED.status, anchor_text = EXCLUDED.anchor_text,
-         target_url = EXCLUDED.target_url, placement_date = EXCLUDED.placement_date,
-         removal_date = EXCLUDED.removal_date, cost = EXCLUDED.cost,
-         notes = EXCLUDED.notes, submitted_at = EXCLUDED.submitted_at,
-         submission_url = EXCLUDED.submission_url, live_url = EXCLUDED.live_url,
-         last_checked_at = EXCLUDED.last_checked_at,
-         status_history = EXCLUDED.status_history,
-         updated_at = CURRENT_TIMESTAMP`,
-      values,
-    );
-  }
-}
-
-async function upsertWorkflow(
-  client: PoolClient,
-  workflow: JsonRecord,
-  resourceIds: Map<string, number>,
-) {
-  const workflowId = text(workflow.id).slice(0, 200);
-  const sourceResourceId = text(workflow.resourceId);
-  const resourceId =
-    resourceIds.get(sourceResourceId) || numericId(sourceResourceId);
-  if (!workflowId || !resourceId) return;
-  const steps = Array.isArray(workflow.steps) ? workflow.steps.slice(0, 30) : [];
-  const serializedSteps = JSON.stringify(steps);
-  if (serializedSteps.length > 500_000) {
-    throw new Error('Workflow template is too large');
-  }
-  const requestedStatus = text(workflow.status);
-  const status = ['learning', 'ready', 'needs_relearn'].includes(requestedStatus)
-    ? requestedStatus
-    : 'learning';
-  await client.query(
-    `INSERT INTO extension_form_workflows (
-       workflow_id, resource_id, domain, name, status, version, steps,
-       created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7::jsonb,
-       COALESCE($8::timestamptz, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP
-     ) ON CONFLICT (resource_id) DO UPDATE SET
-       workflow_id = EXCLUDED.workflow_id,
-       domain = EXCLUDED.domain,
-       name = EXCLUDED.name,
-       status = EXCLUDED.status,
-       version = EXCLUDED.version,
-       steps = EXCLUDED.steps,
-       updated_at = CURRENT_TIMESTAMP`,
-    [
-      workflowId,
-      resourceId,
-      text(workflow.domain),
-      text(workflow.name) || 'Submission workflow',
-      status,
-      Math.max(1, Math.trunc(number(workflow.version, 1))),
-      serializedSteps,
-      nullableDate(workflow.createdAt),
-    ],
-  );
-}
-
-export async function applyExtensionOpportunityDecision(
-  payload: OpportunityDecisionPayload,
-) {
-  const action = text(payload.action);
-  const rootDomain = normalizeDomain(payload.rootDomain);
-  const reason = text(payload.reason).slice(0, 200) || 'manual';
-  if (!rootDomain) {
-    throw new OpportunityDecisionInputError('A valid rootDomain is required');
-  }
-  if (!VALID_OPPORTUNITY_DECISIONS.has(action)) {
-    throw new OpportunityDecisionInputError(
-      'action must be confirm, exclude, or restore',
-    );
-  }
-
-  return transaction(async (client) => {
-    let prospect;
-    let resource = null;
-    let submissions: JsonRecord[] = [];
-
-    if (action === 'exclude') {
-      prospect = await client.query(
-        `UPDATE extension_prospects
-         SET excluded = TRUE,
-             excluded_at = CURRENT_TIMESTAMP,
-             excluded_reason = $2,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE root_domain = $1
-         RETURNING *`,
-        [rootDomain, reason],
-      );
-      if (!prospect.rowCount) {
-        const existingResource = await client.query(
-          'SELECT * FROM resources WHERE domain = $1',
-          [rootDomain],
-        );
-        if (!existingResource.rowCount) {
-          throw new OpportunityDecisionInputError(
-            'Opportunity not found',
-            404,
-          );
-        }
-        const row = existingResource.rows[0];
-        prospect = await client.query(
-          `INSERT INTO extension_prospects (
-             root_domain, authority, status, excluded, excluded_at,
-             excluded_reason, import_order, created_at, updated_at
-           )
-           SELECT $1, $2, 'pending', TRUE, CURRENT_TIMESTAMP, $3,
-             COALESCE(MAX(import_order), -1) + 1,
-             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-           FROM extension_prospects
-           RETURNING *`,
-          [rootDomain, row.domain_authority, reason],
-        );
-      }
-    } else if (action === 'restore') {
-      prospect = await client.query(
-        `UPDATE extension_prospects
-         SET excluded = FALSE,
-             excluded_at = NULL,
-             excluded_reason = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE root_domain = $1
-         RETURNING *`,
-        [rootDomain],
-      );
-      if (!prospect.rowCount) {
-        throw new OpportunityDecisionInputError('Opportunity not found', 404);
-      }
-    } else {
-      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `extension-resource:${rootDomain}`,
-      ]);
-      prospect = await client.query(
-        `UPDATE extension_prospects
-         SET status = 'can_add',
-             excluded = FALSE,
-             excluded_at = NULL,
-             excluded_reason = NULL,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE root_domain = $1
-         RETURNING *`,
-        [rootDomain],
-      );
-      resource = await client.query(
-        'SELECT * FROM resources WHERE lower(btrim(domain)) = $1 ORDER BY id LIMIT 1',
-        [rootDomain],
-      );
-      if (!resource.rowCount && !prospect.rowCount) {
-        throw new OpportunityDecisionInputError('Opportunity not found', 404);
-      }
-      if (!resource.rowCount) {
-        const row = prospect.rows[0];
-        resource = await client.query(
-          `INSERT INTO resources (
-             domain, url, domain_authority, category, cost, notes,
-             is_active, created_at, updated_at
-           ) VALUES (
-             $1, $2, $3, $4, 0, $5, TRUE,
-             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-           )
-           RETURNING *`,
-          [
-            rootDomain,
-            row.screening_entry_url ||
-              row.submission_url ||
-              `https://${rootDomain}`,
-            Number(row.authority) || 0,
-            row.screening_category || 'directory',
-            row.notes || null,
-          ],
-        );
-      } else {
-        resource = await client.query(
-          `UPDATE resources SET updated_at = CURRENT_TIMESTAMP
-           WHERE id = $1 RETURNING *`,
-          [resource.rows[0].id],
-        );
-      }
-      const resourceId = resource.rows[0].id;
-      await client.query(
-        `INSERT INTO backlinks (website_id, resource_id, status)
-         SELECT id, $1, 'pending' FROM websites WHERE is_active = TRUE
-         ON CONFLICT (website_id, resource_id) DO NOTHING`,
-        [resourceId],
-      );
-      const submissionResult = await client.query(
-        `SELECT * FROM backlinks
-         WHERE resource_id = $1
-         ORDER BY website_id`,
-        [resourceId],
-      );
-      submissions = submissionResult.rows;
-    }
-
     return {
-      action,
-      rootDomain,
-      prospect: prospect.rowCount
-        ? serializeProspect(prospect.rows[0])
-        : null,
-      resource: resource?.rowCount
-        ? serializeResource(resource.rows[0])
-        : null,
-      submissions: submissions.map(serializeSubmission),
+      received: results.length,
+      updated,
+      missing: results.length - updated,
     };
   });
 }
-
+export async function applyExtensionOpportunityDecision(
+  payload: OpportunityDecisionPayload,
+) {
+  const action = text(payload.action),
+    rootDomain = normalizeDomain(payload.rootDomain),
+    reason = text(payload.reason).slice(0, 200) || "manual";
+  if (!rootDomain)
+    throw new OpportunityDecisionInputError("A valid rootDomain is required");
+  if (!VALID_OPPORTUNITY_DECISIONS.has(action))
+    throw new OpportunityDecisionInputError(
+      "action must be confirm, exclude, or restore",
+    );
+  return mutateState((state) => {
+    let prospect = state
+      .table("extension_prospects")
+      .find((r) => r.root_domain === rootDomain);
+    let resource = state
+      .table("resources")
+      .find((r) => r.domain.trim().toLowerCase() === rootDomain);
+    if ((!prospect && !resource) || (action === "restore" && !prospect))
+      throw new OpportunityDecisionInputError("Opportunity not found", 404);
+    if (action === "exclude") {
+      if (!prospect)
+        prospect = state.insert("extension_prospects", {
+          root_domain: rootDomain,
+          authority: resource!.domain_authority,
+          import_order: nextOrder(state),
+        });
+      Object.assign(prospect, {
+        excluded: true,
+        excluded_at: state.now,
+        excluded_reason: reason,
+        updated_at: state.now,
+      });
+    } else if (action === "restore")
+      Object.assign(prospect!, {
+        excluded: false,
+        excluded_at: null,
+        excluded_reason: null,
+        updated_at: state.now,
+      });
+    else {
+      if (prospect)
+        Object.assign(prospect, {
+          status: "can_add",
+          excluded: false,
+          excluded_at: null,
+          excluded_reason: null,
+          updated_at: state.now,
+        });
+      if (!resource)
+        resource = state.insert("resources", {
+          domain: rootDomain,
+          url:
+            prospect!.screening_entry_url ||
+            prospect!.submission_url ||
+            `https://${rootDomain}`,
+          domain_authority: Number(prospect!.authority) || 0,
+          category: prospect!.screening_category || "directory",
+          notes: prospect!.notes || null,
+        });
+      else resource.updated_at = state.now;
+      for (const website of state.table("websites").filter((w) => w.is_active))
+        state.ensureBacklink(website.id, resource.id);
+    }
+    return {
+      action,
+      rootDomain,
+      prospect: prospect ? serializeProspect(prospect) : null,
+      resource:
+        action === "confirm" && resource ? serializeResource(resource) : null,
+      submissions:
+        action === "confirm"
+          ? state
+              .table("backlinks")
+              .filter((r) => same(r.resource_id, resource!.id))
+              .sort((a, b) => a.website_id - b.website_id)
+              .map(serializeSubmission)
+          : [],
+    };
+  });
+}
 export async function applyExtensionWorkspacePatch(rawPatch: WorkspacePatch) {
-  return transaction(async (client) => {
-    const prospects = rawPatch.prospects || {};
-    const websites = rawPatch.websites || {};
-    const resources = rawPatch.resources || {};
-    const submissions = rawPatch.submissions || {};
-    const workflows = rawPatch.workflows || {};
-
-    const prospectRemovals = strings(prospects.remove);
-    if (prospectRemovals.length) {
-      await client.query(
-        'DELETE FROM extension_prospects WHERE root_domain = ANY($1::text[])',
-        [prospectRemovals],
+  return mutateState((state) => {
+    const remove = (table: Table, field: string, ids: string[]) =>
+      state.remove(table, (r) => ids.includes(String(r[field])));
+    remove(
+      "extension_prospects",
+      "root_domain",
+      strings(rawPatch.prospects?.remove),
+    );
+    remove(
+      "extension_prospect_sources",
+      "root_domain",
+      strings(rawPatch.prospects?.remove),
+    );
+    remove(
+      "extension_form_workflows",
+      "workflow_id",
+      strings(rawPatch.workflows?.remove),
+    );
+    remove("backlinks", "id", strings(rawPatch.submissions?.remove));
+    for (const [table, field, ids] of [
+      ["websites", "website_id", strings(rawPatch.websites?.remove)],
+      ["resources", "resource_id", strings(rawPatch.resources?.remove)],
+    ] as [Table, string, string[]][]) {
+      remove(table, "id", ids);
+      for (const child of [
+        "backlinks",
+        "extension_generated_content",
+        ...(table === "websites"
+          ? ["website_extended_info"]
+          : ["extension_form_workflows"]),
+      ] as Table[])
+        remove(child, field, ids);
+      // Operation ledger FKs intentionally prevent deleting historical submissions.
+    }
+    for (const p of records(rawPatch.prospects?.upsert)) {
+      const domain = text(p.rootDomain);
+      if (!domain) continue;
+      patchRow(
+        state,
+        "extension_prospects",
+        state
+          .table("extension_prospects")
+          .find((r) => r.root_domain === domain),
+        {
+          root_domain: domain,
+          authority: nullableNumber(p.as),
+          csv_file_count: nullableNumber(p.csvFileCount),
+          source_files: text(p.sourceFiles) || null,
+          status: VALID_PROSPECT_STATUSES.has(text(p.status))
+            ? text(p.status)
+            : "pending",
+          submission_url: text(p.submissionUrl) || null,
+          notes: text(p.notes) || null,
+          excluded: boolean(p.excluded, false),
+          excluded_at: nullableDate(p.excludedAt),
+          excluded_reason: text(p.excludedReason) || null,
+          last_opened_at: nullableDate(p.lastOpenedAt),
+          last_imported_at: nullableDate(p.lastImportedAt),
+          import_order: number(p.importOrder),
+          ...(nullableDate(p.createdAt)
+            ? { created_at: nullableDate(p.createdAt) }
+            : {}),
+        },
       );
     }
-    await upsertProspects(client, records(prospects.upsert));
-
-    const workflowRemovals = strings(workflows.remove);
-    if (workflowRemovals.length) {
-      await client.query(
-        'DELETE FROM extension_form_workflows WHERE workflow_id = ANY($1::text[])',
-        [workflowRemovals],
+    const websiteIds = new Map<string, number>(),
+      resourceIds = new Map<string, number>();
+    for (const w of records(rawPatch.websites?.upsert)) {
+      const domain = text(w.domain);
+      if (!domain) continue;
+      const id = numericId(w.id);
+      const existing = id
+        ? state.table("websites").find((r) => same(r.id, id))
+        : state.table("websites").find((r) => r.domain === domain);
+      const row = patchRow(state, "websites", existing, {
+        ...(id ? { id } : {}),
+        domain,
+        name: text(w.name) || domain,
+        category: markdownText(w.category),
+        is_active: boolean(w.active),
+        ...(nullableDate(w.createdAt)
+          ? { created_at: nullableDate(w.createdAt) }
+          : {}),
+      });
+      websiteIds.set(text(w.id), row.id);
+      patchRow(
+        state,
+        "website_extended_info",
+        state
+          .table("website_extended_info")
+          .find((r) => same(r.website_id, row.id)),
+        {
+          website_id: row.id,
+          support_email: text(w.supportEmail) || null,
+          title: text(w.title) || null,
+          short_description: markdownText(w.shortDescription) || null,
+          description: markdownText(w.description) || null,
+          url: text(w.url) || null,
+        },
       );
     }
-
-    const submissionRemovals = strings(submissions.remove)
-      .map(numericId)
-      .filter((id): id is number => Boolean(id));
-    if (submissionRemovals.length) {
-      await client.query('DELETE FROM backlinks WHERE id = ANY($1::bigint[])', [
-        submissionRemovals,
-      ]);
+    for (const r of records(rawPatch.resources?.upsert)) {
+      const domain = text(r.domain);
+      if (!domain) continue;
+      const id = numericId(r.id);
+      const existing = id
+        ? state.table("resources").find((row) => same(row.id, id))
+        : undefined;
+      if (
+        !id &&
+        state
+          .table("resources")
+          .some(
+            (row) => row.domain.trim().toLowerCase() === domain.toLowerCase(),
+          )
+      )
+        throw Object.assign(
+          new Error("A resource with this domain already exists"),
+          { code: "23505" },
+        );
+      const row = patchRow(state, "resources", existing, {
+        ...(id ? { id } : {}),
+        domain,
+        url: text(r.url) || `https://${domain}`,
+        contact_email: text(r.contactEmail) || null,
+        domain_authority: number(r.authority),
+        category: text(r.category) || "directory",
+        cost: number(r.cost),
+        notes: text(r.notes) || null,
+        is_active: boolean(r.active),
+        ...(nullableDate(r.createdAt)
+          ? { created_at: nullableDate(r.createdAt) }
+          : {}),
+      });
+      resourceIds.set(text(r.id), row.id);
     }
-
-    const websiteRemovals = strings(websites.remove)
-      .map(numericId)
-      .filter((id): id is number => Boolean(id));
-    if (websiteRemovals.length) {
-      await client.query('DELETE FROM websites WHERE id = ANY($1::bigint[])', [
-        websiteRemovals,
-      ]);
+    for (const s of records(rawPatch.submissions?.upsert)) {
+      const websiteId =
+          websiteIds.get(text(s.websiteId)) || numericId(s.websiteId),
+        resourceId =
+          resourceIds.get(text(s.resourceId)) || numericId(s.resourceId);
+      if (!websiteId || !resourceId) continue;
+      const id = numericId(s.id);
+      const row =
+        (id && state.table("backlinks").find((r) => same(r.id, id))) ||
+        state
+          .table("backlinks")
+          .find(
+            (r) =>
+              same(r.website_id, websiteId) && same(r.resource_id, resourceId),
+          );
+      patchRow(state, "backlinks", row, {
+        ...(!row && id ? { id } : {}),
+        website_id: websiteId,
+        resource_id: resourceId,
+        status: VALID_SUBMISSION_STATUSES.has(text(s.status))
+          ? text(s.status)
+          : "pending",
+        anchor_text: text(s.anchorText) || null,
+        target_url: text(s.targetUrl) || null,
+        placement_date: nullableDate(s.placementDate),
+        removal_date: nullableDate(s.removalDate),
+        cost: number(s.cost),
+        notes: text(s.notes) || null,
+        submitted_at: nullableDate(s.submittedAt),
+        submission_url: text(s.submissionUrl) || null,
+        live_url: text(s.liveUrl) || null,
+        last_checked_at: nullableDate(s.lastCheckedAt),
+        status_history: normalizeSubmissionHistory(s.statusHistory),
+        ...(nullableDate(s.createdAt)
+          ? { created_at: nullableDate(s.createdAt) }
+          : {}),
+      });
     }
-
-    const resourceRemovals = strings(resources.remove)
-      .map(numericId)
-      .filter((id): id is number => Boolean(id));
-    if (resourceRemovals.length) {
-      await client.query('DELETE FROM resources WHERE id = ANY($1::bigint[])', [
-        resourceRemovals,
-      ]);
+    for (const w of records(rawPatch.workflows?.upsert)) {
+      const id = text(w.id).slice(0, 200),
+        resourceId =
+          resourceIds.get(text(w.resourceId)) || numericId(w.resourceId);
+      if (!id || !resourceId) continue;
+      const steps = Array.isArray(w.steps) ? w.steps.slice(0, 30) : [];
+      if (JSON.stringify(steps).length > 500_000)
+        throw new Error("Workflow template is too large");
+      patchRow(
+        state,
+        "extension_form_workflows",
+        state
+          .table("extension_form_workflows")
+          .find((r) => same(r.resource_id, resourceId)),
+        {
+          workflow_id: id,
+          resource_id: resourceId,
+          domain: text(w.domain),
+          name: text(w.name) || "Submission workflow",
+          status: ["learning", "ready", "needs_relearn"].includes(
+            text(w.status),
+          )
+            ? text(w.status)
+            : "learning",
+          version: Math.max(1, Math.trunc(number(w.version, 1))),
+          steps,
+          ...(nullableDate(w.createdAt)
+            ? { created_at: nullableDate(w.createdAt) }
+            : {}),
+        },
+      );
     }
-
-    const websiteIds = new Map<string, number>();
-    for (const website of records(websites.upsert)) {
-      await upsertWebsite(client, website, websiteIds);
-    }
-    const resourceIds = new Map<string, number>();
-    for (const resource of records(resources.upsert)) {
-      await upsertResource(client, resource, resourceIds);
-    }
-    for (const submission of records(submissions.upsert)) {
-      await upsertSubmission(client, submission, websiteIds, resourceIds);
-    }
-    for (const workflow of records(workflows.upsert)) {
-      await upsertWorkflow(client, workflow, resourceIds);
-    }
-
     if (Array.isArray(rawPatch.queue)) {
-      const queue = strings(rawPatch.queue);
-      await client.query(
-        `WITH incoming AS (
-           SELECT
-             root_domain,
-             (ordinality - 1)::INTEGER AS queue_position
-           FROM unnest($1::text[]) WITH ORDINALITY
-             AS queued(root_domain, ordinality)
-         ),
-         next_positions AS (
-           SELECT
-             prospect.root_domain,
-             CASE
-               WHEN prospect.excluded THEN NULL
-               ELSE incoming.queue_position
-             END AS queue_position
-           FROM extension_prospects AS prospect
-           LEFT JOIN incoming USING (root_domain)
-         )
-         UPDATE extension_prospects AS prospect
-         SET queue_position = next_positions.queue_position,
-             updated_at = CURRENT_TIMESTAMP
-         FROM next_positions
-         WHERE prospect.root_domain = next_positions.root_domain
-           AND prospect.queue_position IS DISTINCT FROM next_positions.queue_position`,
-        [queue],
+      const positions = new Map(
+        strings(rawPatch.queue).map((domain, index) => [domain, index]),
       );
+      for (const p of state.table("extension_prospects")) {
+        const position = p.excluded
+          ? null
+          : (positions.get(p.root_domain) ?? null);
+        if (p.queue_position !== position)
+          Object.assign(p, { queue_position: position, updated_at: state.now });
+      }
     }
-
-    return loadWithClient(client);
+    return workspaceFromState(state);
   });
 }

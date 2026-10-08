@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const ts=require('typescript');
-const {PGlite}=require('@electric-sql/pglite');
+
 const root=path.join(__dirname,'..');
 function moduleFrom(file,deps={}) {
  const output=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
@@ -23,22 +23,11 @@ test('verification of undated historical live links does not count as a new subm
  assert.equal(core.httpUrl('javascript:alert(1)'), '');
  assert.equal(core.httpUrl('https://user:password@example.com'), '');
 });
-async function setup(migrate=true) {
- const db=new PGlite();
- let schema=fs.readFileSync(path.join(root,'database/schema-postgresql.sql'),'utf8').replace(/CREATE EXTENSION IF NOT EXISTS pg_trgm;/g,'').replace(/CREATE INDEX IF NOT EXISTS idx_resources_domain_trgm[^;]+;/g,'');
- await db.exec(schema);
- for(const file of ['add-extension-prospects.sql','add-extension-prospect-sources.sql','add-extension-prospect-screening.sql','add-extension-submission-tracking.sql','add-extension-form-workflows.sql'])await db.exec(fs.readFileSync(path.join(root,'migrations',file),'utf8'));
- if(migrate){const migration=fs.readFileSync(path.join(root,'migrations/add-backlink-operations.sql'),'utf8');await db.exec(migration);await db.exec(migration);}
- const database={query:(sql,args)=>db.query(sql,args),transaction:fn=>db.transaction(tx=>fn({query:(sql,args)=>tx.query(sql,args)}))};
- const workspace=moduleFrom('lib/extension-workspace.ts',{'@/lib/database':database});
- const service=moduleFrom('lib/backlink-operations.ts',{'@/lib/database':database,'@/lib/extension-workspace':workspace,'@/lib/backlink-operations-core':core});
- await db.exec("INSERT INTO websites(domain,name,category) VALUES('pixfy.io','Pixfy','AI'),('scribix.io','Scribix','AI'),('fablepilot.com','FablePilot','AI');");
- return {db,service};
+async function setup() {
+ const env=await require('./d1-harness.cjs').setup();
+ await env.db.exec("INSERT INTO websites(domain,name,category) VALUES('pixfy.io','Pixfy','AI'),('scribix.io','Scribix','AI'),('fablepilot.com','FablePilot','AI');");
+ return env;
 }
-test('read-only legacy view works before migration',async()=>{
- const {db,service}=await setup(false);
- try{const data=await service.readOperations(day);assert.equal(data.ready,false);assert.equal(data.report.sites.length,3);await assert.rejects(service.mutateOperations({action:'start'}),/迁移/);}finally{await db.close();}
-});
 test('real SQL lifecycle: FIFO, dedup, independent 5-per-site quotas, failures, snapshots and evidence',async()=>{
  const {db,service}=await setup();
  try {

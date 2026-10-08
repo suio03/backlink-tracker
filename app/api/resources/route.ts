@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     }
 
     if (search) {
-      whereClause += ` AND (r.domain ILIKE $${paramIndex} OR r.url ILIKE $${paramIndex})`;
+      whereClause += ` AND (r.domain LIKE $${paramIndex} OR r.url LIKE $${paramIndex})`;
       params.push(`%${search}%`);
       paramIndex++;
     }
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
 
     const sql = `
       INSERT INTO resources (domain, url, contact_email, domain_authority, category, cost, notes, is_active, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, true, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       RETURNING *;
     `;
 
